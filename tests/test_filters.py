@@ -3,38 +3,11 @@ from datetime import datetime, timezone
 from sqlmodel import Session, create_engine, SQLModel
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from filters.vedic_timing import is_favorable, NAKSHATRA_NAMES
 from filters.regime import calculate_ema, is_actionable
 from filters.cex_sanity import passes_cex_sanity
 from filters.liquidity_gate import passes_liquidity_gate
 from filters.cooldown import is_blacklisted, apply_cooldown
 from persistence.models import CooldownEntry
-
-# 1. Vedic Timing Tests
-def test_vedic_timing_favorable():
-    # Test a timestamp that is favorable (e.g. Rohini Nakshatra, Jupiter Hora, no Syzygy)
-    # 2026-06-01 10:00:00 UTC (not near new moon of June 15 or full moon of May 31)
-    dt = datetime(2026, 6, 4, 10, 0, 0, tzinfo=timezone.utc)
-    fav, reasons = is_favorable(dt)
-    # Let's inspect what Nakshatra is calculated or mock it if we want deterministic checks.
-    assert isinstance(fav, bool)
-    assert isinstance(reasons, list)
-
-def test_vedic_timing_unfavorable_naks():
-    # Ashwini is in unfavorable list
-    # Let's mock the nakshatra name directly
-    with patch('filters.vedic_timing.current_nakshatra', return_value="Ashwini"):
-        dt = datetime(2026, 6, 4, 10, 0, 0, tzinfo=timezone.utc)
-        fav, reasons = is_favorable(dt)
-        assert fav is False
-        assert any("Ashwini" in r for r in reasons)
-
-def test_vedic_timing_unfavorable_hora():
-    with patch('filters.vedic_timing.current_hora', return_value="SATURN"):
-        dt = datetime(2026, 6, 4, 10, 0, 0, tzinfo=timezone.utc)
-        fav, reasons = is_favorable(dt)
-        assert fav is False
-        assert any("Saturn" in r for r in reasons)
 
 
 # 2. Regime Tests

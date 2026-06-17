@@ -18,8 +18,14 @@ class Settings(BaseSettings):
 
     # --- Data providers ---
     cmc_api_key: str = Field(default="")
+    cmc_mcp_api_key: str = Field(default="925563e8c6a545d597202100862e4a81")
+    cmc_mcp_url: str = Field(default="https://mcp.coinmarketcap.com/skill-hub/stream")
     groq_api_key: str = Field(default="")
     groq_model: str = Field(default="llama-3.3-70b-versatile")
+    groq_council_primary: str = Field(default="llama-3.3-70b-versatile")
+    groq_council_verifier: str = Field(default="openai/gpt-oss-120b")
+    groq_council_fast: str = Field(default="llama-3.1-8b-instant")
+    groq_council_timeout_sec: int = Field(default=8)
     fear_greed_url: str = Field(default="https://api.alternative.me/fng/?limit=2")
 
     # --- Risk defaults ---
@@ -32,8 +38,20 @@ class Settings(BaseSettings):
     kill_drawdown_pct: float = Field(default=25.0)
     cex_deviation_bps: int = Field(default=120)
     liquidity_impact_bps: int = Field(default=150)
-    enable_vedic_filter: bool = Field(default=True)
-    enable_news_catalyst: bool = Field(default=True)
+    quality_mode: bool = Field(default=True)
+    confluence_threshold: int = Field(default=70)            # trend-strategy internal bar (quality)
+    confluence_threshold_relaxed: int = Field(default=45)    # trend-strategy internal bar (non-quality)
+    confluence_junk_floor: int = Field(default=30)           # candidate junk filter; lets counter-trend through
+    council_min_final_confidence: float = Field(default=0.62)
+    council_min_final_confidence_relaxed: float = Field(default=0.55)
+    enable_strategy_momentum_pullback: bool = Field(default=True)
+    enable_strategy_fib_golden_pocket: bool = Field(default=True)
+    enable_strategy_capitulation: bool = Field(default=True)
+    enable_strategy_news_catalyst: bool = Field(default=True)
+    enable_strategy_mean_reversion: bool = Field(default=True)
+    enable_strategy_trend_follow: bool = Field(default=True)
+    enable_strategy_vol_squeeze: bool = Field(default=True)
+    enable_strategy_whale_flow: bool = Field(default=True)
 
     # --- Mode ---
     start_mode: str = Field(default="simulation")

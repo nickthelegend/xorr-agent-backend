@@ -37,6 +37,23 @@ class MarketContext:
     quotes: Dict[str, Quote] = field(default_factory=dict)
     open_positions: List[Any] = field(default_factory=list)
     regime: string = "CHOP"
+    confluence: float = 0.0
+    macro: Dict[str, Any] = field(default_factory=dict)
+    btc_correlation: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def minimal_for_test(cls, symbol: str):
+        return cls(
+            timestamp=datetime.now(timezone.utc),
+            fear_greed_value=50,
+            fear_greed_label="Neutral",
+            btc_dominance=55.0,
+            total_market_cap_usd=2.5e12,
+            total_market_cap_change_24h=1.5,
+            bnb_price_usd=600.0,
+            regime="TREND_UP",
+            confluence=70.0
+        )
 
 @dataclass
 class Signal:
@@ -80,6 +97,9 @@ class DecisionLog:
     brain_score: float = 0.0
     reasoning: string = ""
     market_snapshot: Dict[str, float] = field(default_factory=dict)
+    confluence: Optional[float] = None
+    confluence_breakdown: Optional[Dict[str, float]] = None
+    council: Optional[Dict[str, Any]] = None
 
 # Simple string stub to avoid python string type naming issues
 string = str

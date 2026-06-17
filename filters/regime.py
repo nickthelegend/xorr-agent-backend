@@ -62,9 +62,11 @@ def is_actionable(regime: str, strategy_name: str) -> bool:
     """Returns True if the strategy is allowed to enter in the current regime."""
     s_name = strategy_name.lower()
     if "momentum" in s_name:
-        return regime == "TREND_UP"
+        # Momentum pullbacks: trending-up or ranging (avoid only confirmed downtrends)
+        return regime in ["TREND_UP", "CHOP"]
     elif "capitulation" in s_name:
-        return regime in ["CHOP", "RISK_OFF"]
+        # Counter-trend bounce after a flush: most useful in weak/falling tape
+        return regime in ["TREND_DOWN", "CHOP", "RISK_OFF"]
     elif "fib" in s_name:
         # Fibonacci pocket bounce works in TREND_UP or CHOP
         return regime in ["TREND_UP", "CHOP"]

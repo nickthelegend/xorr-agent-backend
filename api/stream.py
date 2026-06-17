@@ -43,13 +43,34 @@ async def log_engine_msg(session: Session, level: str, msg: str):
         "msg": log_entry.msg
     })
 
-# Helper to push a new equity tick and stream
+# Throttle for persisting equity points (seconds between DB writes)
+_last_equity_persist = 0.0
+_EQUITY_PERSIST_INTERVAL = 60.0
+
+# Helper to push a new equity tick: stream it, persist a throttled point for the
+# equity curve, and raise the peak-equity high-water mark for the risk engine.
 async def tick_equity_val(equity_usd: float):
-    # Broadcast to SSE listeners
+    global _last_equity_persist
+    now_ts = datetime.now(timezone.utc).timestamp()
+
     await equity_broadcaster.broadcast("tick", {
         "t": datetime.now(timezone.utc).isoformat(),
         "equityUsd": round(equity_usd, 2)
     })
+
+    if now_ts - _last_equity_persist >= _EQUITY_PERSIST_INTERVAL:
+        _last_equity_persist = now_ts
+        try:
+            from sqlmodel import Session
+            from persistence.db import engine
+            from persistence.repo import add_equity_point, get_state, update_state
+            with Session(engine) as session:
+                add_equity_point(session, round(equity_usd, 2))
+                state = get_state(session)
+                if equity_usd > state.peak_equity:
+                    update_state(session, peak_equity=equity_usd)
+        except Exception as e:
+            print(f"[EQUITY PERSIST WARNING] {e}")
 
 @router.get("/stream/log")
 async def stream_logs(request: Request, session: Session = Depends(get_session)):

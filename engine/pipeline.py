@@ -7,21 +7,19 @@ from sqlmodel import Session
 from config import settings
 from core.types import MarketContext, Signal, DecisionLog
 from core.twak_executor import TwakExecutor
-from data.tokens import iter_all, resolve
+from data.tokens import iter_all, iter_tradable, resolve
 from data.cmc_client import fetch_cmc_quotes
 from data.fear_greed import get_fear_greed
 from data.binance_klines import fetch_binance_klines
-from filters.vedic_timing import is_favorable
 from filters.regime import classify_market_regime, is_actionable
 from filters.cex_sanity import passes_cex_sanity
 from filters.liquidity_gate import passes_liquidity_gate
 from filters.cooldown import is_blacklisted
-from strategies.momentum_pullback import MomentumPullbackStrategy
-from strategies.fib_golden_pocket import FibGoldenPocketStrategy
-from strategies.capitulation import CapitulationStrategy
-from strategies.news_catalyst import NewsCatalystStrategy
-from strategies.arbiter import arbiter
-from brain.llm_client import score_signals
+import filters.volume_gate as volume_gate
+import filters.whale_netflow as whale_netflow
+import filters.confluence_score as confluence_score
+from strategies.registry import active_strategies
+from brain.council import score_council
 from brain.decision_log import log_decision
 from risk.drawdown_ladder import calculate_drawdown_multiplier
 from risk.sizing import calculate_trade_size
@@ -30,14 +28,7 @@ from risk.qualifier import is_qualifier_trade_needed, execute_qualifier_trade
 from api.stream import log_engine_msg, tick_equity_val
 from persistence.models import Position, Trade, RuntimeState
 from persistence.repo import add_position, add_trade
-
-# Initialize strategy classes
-_strategies = [
-    MomentumPullbackStrategy(),
-    FibGoldenPocketStrategy(),
-    CapitulationStrategy(),
-    NewsCatalystStrategy()
-]
+from strategies.arbiter import arbiter
 
 async def build_market_context(session: Session, executor: TwakExecutor) -> MarketContext:
     """Builds the unified MarketContext object by querying data providers and local database."""
@@ -116,34 +107,15 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
         await execute_qualifier_trade(session, executor)
         return
 
-    # 5. Macro filters (Vedic & Regime)
+    # 5. Macro filters (Regime check)
     now_dt = datetime.now(timezone.utc)
-    
-    # Vedic Timing
-    if settings.enable_vedic_filter:
-        is_fav, reasons = is_favorable(now_dt)
-        if not is_fav:
-            await log_engine_msg(session, "warn", f"[bot] Vedic filter blocked cycle. Reasons: {', '.join(reasons)}")
-            # Log skips for all whitelist tokens
-            for token in iter_all():
-                log_decision(DecisionLog(
-                    id=str(uuid.uuid4()),
-                    t=now_dt,
-                    symbol=token.symbol,
-                    action="SKIP",
-                    strategy="vedic_filter",
-                    filters_blocked=["vedic_timing"],
-                    reasoning=f"Vedic filter blocked: {', '.join(reasons)}"
-                ))
-            return
-            
-    # Macro Regime Check
     if ctx.regime == "RISK_OFF":
         await log_engine_msg(session, "warn", "[bot] Regime is RISK_OFF. Only News Catalyst strategy allowed.")
 
-    # 6. Filter candidate universe
+    # 6. Filter candidate universe (only the liquid/tradable subset; the full
+    # 149 list remains the on-chain eligibility whitelist for live swaps)
     candidates = []
-    tokens = iter_all()
+    tokens = iter_tradable()
     
     for token in tokens:
         symbol = token.symbol
@@ -154,24 +126,46 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
         filters_passed = []
         filters_blocked = []
         
-        # CEX Sanity
-        if not await passes_cex_sanity(symbol, quote.price):
-            filters_blocked.append("cex_sanity")
-        else:
-            filters_passed.append("cex_sanity")
-            
-        # Cooldown
+        # 1. Cooldown
         if is_blacklisted(session, symbol):
             filters_blocked.append("cooldown")
         else:
             filters_passed.append("cooldown")
             
-        # Liquidity Gate
-        if "cex_sanity" in filters_passed and "cooldown" in filters_passed:
-            if not await passes_liquidity_gate(executor, symbol, quote.price):
-                filters_blocked.append("liquidity_gate")
+        # 2. Volume Gate
+        if not filters_blocked:
+            if not await volume_gate.passes(ctx, symbol):
+                filters_blocked.append("volume")
             else:
-                filters_passed.append("liquidity_gate")
+                filters_passed.append("volume")
+                
+        # 3. CEX Sanity
+        if not filters_blocked:
+            if not await passes_cex_sanity(symbol, quote.price):
+                filters_blocked.append("cex_sanity")
+            else:
+                filters_passed.append("cex_sanity")
+                
+        # 4. Whale Netflow
+        if not filters_blocked:
+            if not await whale_netflow.is_bullish(ctx, symbol):
+                filters_blocked.append("whale_netflow")
+            else:
+                filters_passed.append("whale_netflow")
+                
+        # 5. Confluence Score
+        if not filters_blocked:
+            if not await confluence_score.passes(ctx, symbol):
+                filters_blocked.append("confluence")
+            else:
+                filters_passed.append("confluence")
+                
+        # 6. Liquidity Gate (TWAK subprocess) - DO LAST
+        if not filters_blocked:
+            if not await passes_liquidity_gate(executor, symbol, quote.price):
+                filters_blocked.append("liquidity")
+            else:
+                filters_passed.append("liquidity")
                 
         # If any filter blocked, record a skip decision
         if filters_blocked:
@@ -192,20 +186,21 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
 
     # 7. Evaluate Strategy Signals
     raw_signals = []
+    enabled_strats = active_strategies(settings, list(arbiter.suspended_strategies))
     for token, quote in candidates:
         symbol = token.symbol
         
         # Fetch 5m and 1h candles
-        candles_5m = await fetch_binance_klines(symbol, "5m", limit=30)
-        candles_1h = await fetch_binance_klines(symbol, "1h", limit=30)
+        candles_5m = await fetch_binance_klines(symbol, "5m", limit=35)
+        candles_1h = await fetch_binance_klines(symbol, "1h", limit=60)
         
-        for strat in _strategies:
+        for strat in enabled_strats:
             # Check strategy-regime actionability
             if not is_actionable(ctx.regime, strat.name):
                 continue
                 
             try:
-                sig = strat.evaluate(symbol, candles_5m, candles_1h, ctx)
+                sig = await strat.evaluate(symbol, candles_5m, candles_1h, ctx)
                 if sig:
                     raw_signals.append(sig)
             except Exception as e:
@@ -221,9 +216,9 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
         await log_engine_msg(session, "info", "[bot] All signals rejected by Strategy Arbiter.")
         return
 
-    # 9. Score and rank via Llama Brain
-    await log_engine_msg(session, "info", f"[bot] Sending {len(arbitrated_signals)} signals to LLM Brain for scoring...")
-    scored_signals = await score_signals(arbitrated_signals, ctx)
+    # 9. Score and rank via LLM Brain Council
+    await log_engine_msg(session, "info", f"[bot] Sending {len(arbitrated_signals)} signals to LLM Brain Council for scoring...")
+    decisions = await score_council(arbitrated_signals, ctx)
 
     # 10. Execute highest ranked trade(s)
     # We only take the top scored signals up to remaining concurrent slots
@@ -233,25 +228,26 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
         return
         
     trades_executed = 0
-    for ss in scored_signals:
+    from dataclasses import asdict
+    for sig, dec in zip(arbitrated_signals, decisions):
         if trades_executed >= free_slots:
             break
             
-        sig = ss.signal
-        score = ss.score
-        reasoning = ss.reasoning
+        score = dec.final_confidence * 100.0
+        reasoning = dec.votes[0].get("reasoning", "") if dec.votes else "No reasoning"
         
-        # Check Brain threshold
-        if score < 70.0:
-            await log_engine_msg(session, "info", f"[bot] Skipping signal {sig.symbol} ({sig.strategy_name}): LLM score {score:.1f} is below entry threshold (70.0).")
+        # Check Brain threshold action
+        if dec.action != "enter":
+            await log_engine_msg(session, "info", f"[bot] Skipping signal {sig.symbol} ({sig.strategy_name}): council action is skip (confidence {dec.final_confidence:.2f}).")
             log_decision(DecisionLog(
-                id=str(uuid.uuid4()),
+                id=dec.decision_id,
                 t=now_dt,
                 symbol=sig.symbol,
                 action="SKIP",
                 strategy=sig.strategy_name,
                 brain_score=score,
-                reasoning=f"LLM score {score:.1f} rejected: {reasoning}"
+                reasoning=f"LLM Council skip (confidence {dec.final_confidence:.2f}): {reasoning}",
+                council=asdict(dec)
             ))
             continue
             
@@ -259,16 +255,25 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
         dd_mult = calculate_drawdown_multiplier(session, portfolio_value)
         
         # Calculate risk sizing
-        size_usd = calculate_trade_size(ctx.fear_greed_value, dd_mult, sig.strategy_name, usdt_balance, len(open_pos))
+        size_usd = calculate_trade_size(
+            ctx.fear_greed_value,
+            dd_mult,
+            sig.strategy_name,
+            usdt_balance,
+            len(open_pos),
+            council_confidence=dec.final_confidence,
+            council_consensus=dec.consensus
+        )
         if size_usd <= 0.0:
             log_decision(DecisionLog(
-                id=str(uuid.uuid4()),
+                id=dec.decision_id,
                 t=now_dt,
                 symbol=sig.symbol,
                 action="SKIP",
                 strategy=sig.strategy_name,
                 brain_score=score,
-                reasoning=f"Sizing rejected (size=$0). Context: F&G={ctx.fear_greed_value}, DD={dd_mult}"
+                reasoning=f"Sizing rejected (size=$0). Context: F&G={ctx.fear_greed_value}, DD={dd_mult}",
+                council=asdict(dec)
             ))
             continue
             
@@ -291,7 +296,8 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
                 token_out=sig.contract,
                 amount_in=Decimal(str(size_usd)),
                 min_out=Decimal(str(min_out)),
-                reason=f"ENTRY_{sig.strategy_name}"
+                reason=f"ENTRY_{sig.strategy_name}",
+                ref_price=token_price
             )
             
             if res.success:
@@ -335,28 +341,27 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
                 )
                 add_trade(session, new_trade)
                 
-                # Deduct simulated balance
-                if executor.simulation:
-                    # Deducted automatically inside executor.swap, but update usdt balance
-                    usdt_balance -= size_usd
+                # Decrement local cash estimate so sizing of further entries in
+                # this same cycle reflects the spend (ledger is updated in swap()).
+                usdt_balance -= size_usd
                 
                 await log_engine_msg(session, "info", f"[bot] POSITION OPENED: {sig.symbol} units={res.amount_out} price=${res.executed_price:.4f} tx={pos_id}")
                 
                 # 3. Log brain decision
                 log_decision(DecisionLog(
-                    id=str(uuid.uuid4()),
+                    id=dec.decision_id,
                     t=now_dt,
                     symbol=sig.symbol,
                     action="ENTER",
                     strategy=sig.strategy_name,
-                    filters_passed=["cex_sanity", "cooldown", "liquidity_gate"],
+                    filters_passed=["cex_sanity", "cooldown", "liquidity"],
                     brain_score=score,
-                    reasoning=f"Position entered successfully: {reasoning}",
-                    market_snapshot={"price": res.executed_price, "score": score}
+                    reasoning=f"Position entered successfully. Council confidence: {dec.final_confidence:.2f}: {reasoning}",
+                    market_snapshot={"price": res.executed_price, "score": score},
+                    council=asdict(dec)
                 ))
                 
                 trades_executed += 1
-                # Recalculate open positions list
                 open_pos.append(new_pos)
                 
             else:

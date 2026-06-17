@@ -64,6 +64,43 @@ async def change_mode(payload: ModeUpdate, session: Session = Depends(get_sessio
         "success": True
     }
 
+@router.get("/engine/registration")
+async def get_registration(session: Session = Depends(get_session)):
+    """Returns the competition registration status of the agent wallet."""
+    state = get_state(session)
+    from core.twak_executor import TwakExecutor
+    executor = TwakExecutor(settings, simulation=(state.mode == "simulation"))
+    try:
+        address = await executor.get_address()
+    except Exception:
+        address = None
+    return {
+        "registered": state.registered,
+        "tx": state.registered_tx,
+        "address": address,
+        "mode": state.mode,
+        "contract": "0x212c61b9b72c95d95bf29cf032f5e5635629aed5",
+    }
+
+
+@router.post("/engine/register")
+async def register_competition(session: Session = Depends(get_session)):
+    """Registers the agent wallet on-chain for the competition (operator action).
+
+    In simulation mode this is a no-op stub; in live mode it runs
+    `twak compete register` via the executor and records the tx hash.
+    """
+    state = get_state(session)
+    from core.twak_executor import TwakExecutor
+    executor = TwakExecutor(settings, simulation=(state.mode == "simulation"))
+    try:
+        tx = await executor.register_for_competition()
+        update_state(session, registered=True, registered_tx=tx)
+        return {"success": True, "tx": tx, "simulated": executor.simulation}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Registration failed: {e}")
+
+
 @router.post("/engine/scan")
 async def trigger_scan(session: Session = Depends(get_session)):
     # Import scheduler and trigger immediate scan

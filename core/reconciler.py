@@ -26,10 +26,10 @@ async def reconcile_on_boot(session: Session, wallet_mgr: WalletManager):
         # Fetch current on-chain balance of this token
         real_balance = 0.0
         try:
-            # Check if simulation or live
             if executor.simulation:
-                # In simulation mode, we verify against our local simulated balances dictionary
-                real_balance = executor._sim_token_balances.get(pos.contract.lower(), 0.0)
+                # Paper positions are authoritative in simulation; the ledger sums
+                # open positions so this always matches (no false manual-sale).
+                real_balance = float(await executor.get_balance(pos.contract))
             else:
                 real_balance = get_balance_of(pos.contract, wallet_address)
         except Exception as e:
@@ -105,6 +105,11 @@ async def reconcile_on_boot(session: Session, wallet_mgr: WalletManager):
     state = get_state(session)
     if state.peak_equity <= 0.0 or total_portfolio_usd > state.peak_equity:
         update_state(session, peak_equity=total_portfolio_usd)
+
+    # Capture the starting-equity baseline once, for accurate return% reporting
+    state = get_state(session)
+    if state.start_equity <= 0.0 and total_portfolio_usd > 0.0:
+        update_state(session, start_equity=total_portfolio_usd)
         
     session.commit()
     await log_engine_msg(session, "info", f"[BOOT] Reconciled {reconciled_count} positions. Initialized peak equity to ${total_portfolio_usd:.2f}")

@@ -21,7 +21,10 @@ def parse_decision_line(line: str) -> Optional[dict]:
             "filtersBlocked": data.get("filters_blocked", []),
             "brainScore": data.get("brain_score", 0.0),
             "reasoning": data.get("reasoning", ""),
-            "marketSnapshot": data.get("market_snapshot", {})
+            "marketSnapshot": data.get("market_snapshot", {}),
+            "confluence": data.get("confluence"),
+            "confluenceBreakdown": data.get("confluence_breakdown"),
+            "council": data.get("council")
         }
     except Exception:
         return None
@@ -58,3 +61,60 @@ def get_latest_decision():
         # Return a dummy placeholder or raise 404
         raise HTTPException(status_code=404, detail="No decisions logged yet.")
     return decisions[0]
+
+@router.get("/council/health")
+async def get_council_health():
+    """Returns the rolling success rate for the Groq council models over the last 50 decisions."""
+    from sqlmodel import Session, select
+    from persistence.db import engine as db_engine
+    from persistence.models import LLMVote
+    
+    with Session(db_engine) as session:
+        # Get last 150 votes
+        stmt = select(LLMVote).order_by(LLMVote.id.desc()).limit(150)
+        votes = list(session.exec(stmt).all())
+        
+    unique_decisions = []
+    seen = set()
+    for v in votes:
+        if v.decision_id not in seen:
+            seen.add(v.decision_id)
+            unique_decisions.append(v.decision_id)
+        if len(unique_decisions) >= 50:
+            break
+            
+    if not unique_decisions:
+        return {
+            "primary": 1.0,
+            "verifier": 1.0,
+            "fast": 1.0
+        }
+        
+    decision_map = {d_id: set() for d_id in unique_decisions}
+    for v in votes:
+        if v.decision_id in decision_map:
+            model_lower = v.model.lower()
+            if "primary" in model_lower:
+                decision_map[v.decision_id].add("primary")
+            elif "verifier" in model_lower:
+                decision_map[v.decision_id].add("verifier")
+            elif "fast" in model_lower:
+                decision_map[v.decision_id].add("fast")
+                
+    successes = {"primary": 0, "verifier": 0, "fast": 0}
+    total_attempts = len(unique_decisions)
+    
+    for d_id in unique_decisions:
+        roles = decision_map[d_id]
+        if "primary" in roles:
+            successes["primary"] += 1
+        if "verifier" in roles:
+            successes["verifier"] += 1
+        if "fast" in roles:
+            successes["fast"] += 1
+            
+    return {
+        "primary": round(successes["primary"] / total_attempts, 2),
+        "verifier": round(successes["verifier"] / total_attempts, 2),
+        "fast": round(successes["fast"] / total_attempts, 2)
+    }

@@ -3,6 +3,7 @@ from core.types import MarketContext, Signal
 from strategies.base import BaseStrategy
 from data.tokens import resolve
 from filters.regime import calculate_ema
+from config import settings
 
 def calculate_rsi(prices: List[float], period: int = 14) -> float:
     if len(prices) < period + 1:
@@ -38,7 +39,12 @@ class MomentumPullbackStrategy(BaseStrategy):
     def __init__(self):
         super().__init__("momentum_pullback")
 
-    def evaluate(self, symbol: str, candles_5m: list, candles_1h: list, market_ctx: MarketContext) -> Optional[Signal]:
+    async def evaluate(self, symbol: str, candles_5m: list, candles_1h: list, market_ctx: MarketContext) -> Optional[Signal]:
+        # Precondition: trend-following needs real momentum confluence
+        from filters.confluence_score import gate_threshold
+        if market_ctx.confluence < gate_threshold():
+            return None
+
         # Need enough history: at least 30 candles
         if len(candles_1h) < 20 or len(candles_5m) < 20:
             return None

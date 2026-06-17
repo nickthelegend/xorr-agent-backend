@@ -2,12 +2,16 @@ from typing import Optional
 from core.types import MarketContext, Signal
 from strategies.base import BaseStrategy
 from data.tokens import resolve
+from config import settings
 
 class CapitulationStrategy(BaseStrategy):
     def __init__(self):
         super().__init__("capitulation")
 
-    def evaluate(self, symbol: str, candles_5m: list, candles_1h: list, market_ctx: MarketContext) -> Optional[Signal]:
+    async def evaluate(self, symbol: str, candles_5m: list, candles_1h: list, market_ctx: MarketContext) -> Optional[Signal]:
+        # Counter-trend: capitulation setups are intrinsically low-momentum, so we
+        # do NOT require a high momentum-confluence score (that would be a
+        # contradiction). The strategy's own flush/volume/wick logic is the gate.
         if len(candles_1h) < 2 or len(candles_5m) < 20:
             return None
             

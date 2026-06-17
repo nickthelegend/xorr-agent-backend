@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from config import settings
 from core.types import Quote
-from data.tokens import iter_all
+from data.tokens import iter_tradable, binance_symbol_for
 
 _cmc_quotes_cache: Dict[str, Quote] = {}
 _last_cmc_fetch_time = 0.0
@@ -18,15 +18,16 @@ async def fetch_cmc_quotes() -> Dict[str, Quote]:
     if _cmc_quotes_cache and (now - _last_cmc_fetch_time < CACHE_EXPIRY_SEC):
         return _cmc_quotes_cache
 
-    tokens = iter_all()
+    tokens = iter_tradable()
     if not tokens:
         return {}
 
     symbols = [t.symbol for t in tokens]
-    
-    # If CMC key is empty, fall back to public CEX price sources to keep agent operational
-    if not settings.cmc_api_key:
-        print("[CMC] API key missing. Falling back to public CEX prices.")
+
+    # If CMC key is missing or a placeholder, fall back to public CEX price
+    # sources to keep the agent operational.
+    key = (settings.cmc_api_key or "").strip()
+    if not key or key.lower().startswith("your_"):
         return await _fetch_fallback_quotes(symbols)
 
     url = "https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest"
@@ -106,12 +107,9 @@ async def _fetch_fallback_quotes(symbols: List[str]) -> Dict[str, Quote]:
                 
                 new_quotes = {}
                 for sym in symbols:
-                    binance_sym = sym.upper()
-                    if binance_sym == "BTCB":
-                        binance_sym = "BTC"
-                    elif binance_sym == "WBNB":
-                        binance_sym = "BNB"
-                        
+                    # Use the token's mapped Binance base (e.g. BTCB -> BTC); skip
+                    # tokens without a Binance spot pair.
+                    binance_sym = (binance_symbol_for(sym) or sym).upper()
                     pair_name = f"{binance_sym}USDT"
                     if pair_name in ticker_map:
                         item = ticker_map[pair_name]

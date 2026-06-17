@@ -64,15 +64,21 @@ async def check_kill_switch(session: Session, current_equity: float, executor: T
         
         # 2. Liquidate open positions
         positions = get_positions(session)
-        
+
+        # Fresh quotes so simulated liquidation fills at the real market price
+        from data.cmc_client import fetch_cmc_quotes
+        kill_quotes = await fetch_cmc_quotes()
+
         for pos in positions:
             print(f"[KILL SWITCH] Liquidating position in {pos.symbol} (${pos.invested:.2f})")
-            
+
             # Close via executor
             # Swap token -> USDT
             token_addr = pos.contract
             qty = Decimal(str(pos.size))
-            
+            kq = kill_quotes.get(pos.symbol.upper())
+            kill_price = kq.price if kq else 0.0
+
             try:
                 # Perform swap: sell held token units back to USDT
                 res = await executor.swap(
@@ -80,7 +86,8 @@ async def check_kill_switch(session: Session, current_equity: float, executor: T
                     token_out=executor.settings.usdt_contract,
                     amount_in=qty,
                     min_out=Decimal("0.0"),  # slippage ignored for market-kill liquidation
-                    reason="KILL_SWITCH"
+                    reason="KILL_SWITCH",
+                    ref_price=kill_price
                 )
                 
                 # Record the trade closure in the database

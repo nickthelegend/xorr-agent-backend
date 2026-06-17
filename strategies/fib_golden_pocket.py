@@ -2,12 +2,18 @@ from typing import Optional
 from core.types import MarketContext, Signal
 from strategies.base import BaseStrategy
 from data.tokens import resolve
+from config import settings
 
 class FibGoldenPocketStrategy(BaseStrategy):
     def __init__(self):
         super().__init__("fib_golden_pocket")
 
-    def evaluate(self, symbol: str, candles_5m: list, candles_1h: list, market_ctx: MarketContext) -> Optional[Signal]:
+    async def evaluate(self, symbol: str, candles_5m: list, candles_1h: list, market_ctx: MarketContext) -> Optional[Signal]:
+        # Precondition: trend-following needs real momentum confluence
+        from filters.confluence_score import gate_threshold
+        if market_ctx.confluence < gate_threshold():
+            return None
+
         if len(candles_5m) < 20:
             return None
             

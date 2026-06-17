@@ -8,18 +8,31 @@ from core.types import Candle
 _klines_cache: Dict[Tuple[str, str, int], Tuple[float, List[Candle]]] = {}
 CACHE_DURATION_SEC = 30.0
 
+_backtest_fetch_override = None
+
 def normalize_binance_symbol(symbol: str) -> str:
     sym = symbol.upper()
+    if sym.endswith("USDT"):
+        return sym
+    # Prefer the token's mapped Binance base (e.g. BTCB -> BTC) when known
+    try:
+        from data.tokens import binance_symbol_for
+        mapped = binance_symbol_for(symbol)
+        if mapped:
+            return f"{mapped.upper()}USDT"
+    except Exception:
+        pass
     if sym == "BTCB":
         return "BTCUSDT"
     if sym == "WBNB":
         return "BNBUSDT"
-    if sym.endswith("USDT"):
-        return sym
     return f"{sym}USDT"
 
 async def fetch_binance_klines(symbol: str, interval: str = "5m", limit: int = 100) -> List[Candle]:
     """Fetches public Binance klines/candlesticks for a symbol and interval."""
+    if _backtest_fetch_override is not None:
+        return await _backtest_fetch_override(symbol, interval, limit)
+        
     binance_symbol = normalize_binance_symbol(symbol)
     cache_key = (binance_symbol, interval, limit)
     now = time.time()

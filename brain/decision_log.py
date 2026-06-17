@@ -38,7 +38,10 @@ def log_decision(decision: DecisionLog):
         "filters_blocked": decision.filters_blocked,
         "brain_score": decision.brain_score,
         "reasoning": decision.reasoning,
-        "market_snapshot": decision.market_snapshot
+        "market_snapshot": decision.market_snapshot,
+        "confluence": decision.confluence,
+        "confluence_breakdown": decision.confluence_breakdown,
+        "council": decision.council
     }
     
     try:

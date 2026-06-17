@@ -106,7 +106,8 @@ async def monitor_tick(session: Session, executor: TwakExecutor):
                     token_out=settings.usdt_contract,
                     amount_in=Decimal(str(pos.size)),
                     min_out=Decimal("0.0"),  # slippage verified in entry, exit runs at market
-                    reason=f"EXIT_{exit_reason}"
+                    reason=f"EXIT_{exit_reason}",
+                    ref_price=current_price
                 )
                 
                 if res.success:

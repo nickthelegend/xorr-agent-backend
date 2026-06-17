@@ -60,18 +60,21 @@ class WalletManager:
             "contract": settings.usdt_contract
         })
         
-        # In simulation mode: include any non-zero simulated token balances
+        # In simulation mode: include open paper positions valued at live price
         if self.executor.simulation:
-            for token_addr, amt in self.executor._sim_token_balances.items():
-                if amt > 0:
-                    token_info = resolve(token_addr)
-                    symbol = token_info.symbol if token_info else "TOKEN"
-                    balances_list.append({
-                        "symbol": symbol,
-                        "amount": amt,
-                        "usd": round(amt, 2),  # Assume $1 for sim usd if we don't have price feed here
-                        "contract": token_addr
-                    })
+            from core import sim_ledger
+            from data.cmc_client import _cmc_quotes_cache
+            for pos in sim_ledger.list_open_positions():
+                if pos.size <= 0:
+                    continue
+                q = _cmc_quotes_cache.get(pos.symbol.upper())
+                usd = pos.size * q.price if (q and q.price > 0) else pos.invested
+                balances_list.append({
+                    "symbol": pos.symbol,
+                    "amount": pos.size,
+                    "usd": round(usd, 2),
+                    "contract": pos.contract
+                })
         else:
             # Live mode: fetch other balances via TWAK if possible
             try:

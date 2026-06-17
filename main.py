@@ -15,6 +15,9 @@ from api.wallet import router as wallet_router
 from api.settings_routes import router as settings_router
 from api.engine_routes import router as engine_router
 from api.stream import router as stream_router
+from api.backtest import router as backtest_router
+from api.learning import router as learning_router
+from api.mcp import router as mcp_router
 
 app = FastAPI(
     title="Xorr Agent API",
@@ -76,3 +79,6 @@ app.include_router(wallet_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(engine_router, prefix="/api")
 app.include_router(stream_router, prefix="/api")
+app.include_router(backtest_router, prefix="/api")
+app.include_router(learning_router, prefix="/api")
+app.include_router(mcp_router, prefix="/api")

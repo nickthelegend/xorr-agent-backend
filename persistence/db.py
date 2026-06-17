@@ -1,8 +1,12 @@
 import os
 from pathlib import Path
+from sqlalchemy import event, text
 from sqlmodel import SQLModel, create_engine, Session, select
 from typing import Generator
-from persistence.models import RuntimeState
+from persistence.models import (
+    Trade, Position, EquityPoint, EngineLog, RuntimeState, CooldownEntry,
+    StrategyStat, LLMVote, BacktestRun, McpSkillCache
+)
 
 # Path settings
 DB_DIR = Path("data_store")
@@ -16,10 +20,53 @@ sqlite_url = f"sqlite:///{DB_PATH}"
 connect_args = {"check_same_thread": False}
 engine = create_engine(sqlite_url, connect_args=connect_args)
 
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_conn, conn_record):
+    """Enable WAL + a busy timeout so the engine's short-lived ledger sessions
+    don't collide with the long-lived pipeline/monitor sessions."""
+    cur = dbapi_conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA busy_timeout=5000")
+    cur.close()
+
+
+# Columns added after the first release. SQLModel.create_all does not ALTER
+# existing tables, so we additively migrate any missing columns here.
+_MIGRATIONS = {
+    "runtimestate": [
+        ("sim_cash_usdt", "FLOAT", "100.0"),
+        ("sim_bnb", "FLOAT", "0.05"),
+        ("sim_seeded", "BOOLEAN", "0"),
+        ("registered", "BOOLEAN", "0"),
+        ("registered_tx", "VARCHAR", "NULL"),
+        ("start_equity", "FLOAT", "0.0"),
+    ],
+}
+
+
+def _migrate_columns():
+    """Adds any missing columns to existing tables (additive, non-destructive)."""
+    with engine.connect() as conn:
+        for table, cols in _MIGRATIONS.items():
+            existing = {
+                row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))
+            }
+            if not existing:
+                continue  # table will be created fresh by create_all
+            for name, sqltype, default in cols:
+                if name not in existing:
+                    conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN {name} {sqltype} DEFAULT {default}")
+                    )
+        conn.commit()
+
+
 def init_db():
     """Initializes tables and seeds default states."""
     SQLModel.metadata.create_all(engine)
-    
+    _migrate_columns()
+
     # Check if RuntimeState is seeded
     with Session(engine) as session:
         statement = select(RuntimeState).where(RuntimeState.id == 1)

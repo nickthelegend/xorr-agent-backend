@@ -53,8 +53,46 @@ class RuntimeState(SQLModel, table=True):
     scheduler_state: str = "IDLE"  # "IDLE" | "SCANNING" | "MONITORING" | "HALTED"
     kill_armed: bool = True
     peak_equity: float = 0.0
+    start_equity: float = 0.0      # baseline equity captured at boot, for return%
+    # --- Simulation paper-trading ledger (source of truth in sim mode) ---
+    sim_cash_usdt: float = 100.0   # paper USDT cash balance
+    sim_bnb: float = 0.05          # paper BNB (gas reserve / valuation)
+    sim_seeded: bool = False       # whether the sim ledger has been initialized
+    # --- Live competition registration ---
+    registered: bool = False       # agent wallet registered on-chain for the competition
+    registered_tx: Optional[str] = None
 
 class CooldownEntry(SQLModel, table=True):
     symbol: str = Field(primary_key=True)
     until: float  # timestamp when cooldown expires
     reason: str
+
+class StrategyStat(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    strategy: str = Field(index=True)
+    trade_id: str
+    closed_at: datetime
+    r_realized: float
+    pnl_usd: float
+
+class LLMVote(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    decision_id: str = Field(index=True)
+    model: str
+    score: float
+    reasoning: str
+    red_flags_json: str
+    latency_ms: int
+
+class BacktestRun(SQLModel, table=True):
+    run_id: str = Field(primary_key=True)
+    started_at: datetime
+    ended_at: datetime
+    window_days: int
+    quality_mode: bool
+    report_json: str  # full BacktestReport serialized
+
+class McpSkillCache(SQLModel, table=True):
+    unique_name: str = Field(primary_key=True)
+    payload_json: str
+    cached_at: datetime

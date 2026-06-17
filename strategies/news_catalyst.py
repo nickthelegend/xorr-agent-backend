@@ -4,6 +4,7 @@ from typing import Optional, List
 from core.types import MarketContext, Signal
 from strategies.base import BaseStrategy
 from data.tokens import resolve
+from config import settings
 
 # Global list of recent news events populated by the news polling loop
 # Each element: (symbol, title, timestamp)
@@ -13,7 +14,12 @@ class NewsCatalystStrategy(BaseStrategy):
     def __init__(self):
         super().__init__("news_catalyst")
 
-    def evaluate(self, symbol: str, candles_5m: list, candles_1h: list, market_ctx: MarketContext) -> Optional[Signal]:
+    async def evaluate(self, symbol: str, candles_5m: list, candles_1h: list, market_ctx: MarketContext) -> Optional[Signal]:
+        # Precondition check
+        threshold = settings.confluence_threshold if settings.quality_mode else 60
+        if market_ctx.confluence < threshold:
+            return None
+
         # News catalyst doesn't need technical candles; it evaluates on news events
         token_info = resolve(symbol)
         if not token_info:

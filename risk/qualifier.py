@@ -8,7 +8,10 @@ from persistence.repo import add_trade
 from core.twak_executor import TwakExecutor
 from data.tokens import resolve
 
-BTCB_CONTRACT = "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c"
+# Qualifier round-trip uses an ELIGIBLE, liquid token so the daily trade counts
+# toward the competition's "1 trade/day" requirement (BTCB is not on the list).
+QUALIFIER_SYMBOL = "ETH"
+QUALIFIER_FALLBACK_CONTRACT = "0x2170Ed0880ac9A755fd29B2688956BD959F933F8"  # Binance-Peg ETH on BSC
 
 def get_ist_now() -> datetime:
     return datetime.now(timezone(timedelta(hours=5, minutes=30)))
@@ -36,30 +39,35 @@ def is_qualifier_trade_needed(session: Session) -> bool:
     return len(today_trades) == 0
 
 async def execute_qualifier_trade(session: Session, executor: TwakExecutor):
-    """Executes a $1.50 USDT -> BTCB -> USDT qualifier round-trip trade."""
-    print("[QUALIFIER] Starting daily minimum trade routine ($1.50 USDT -> BTCB -> USDT).")
-    
+    """Executes a $1.50 USDT -> ETH -> USDT qualifier round-trip on an eligible token."""
+    print(f"[QUALIFIER] Starting daily minimum trade routine ($1.50 USDT -> {QUALIFIER_SYMBOL} -> USDT).")
+
     usdt_contract = executor.settings.usdt_contract
-    btcb_info = resolve("BTCB")
-    btcb_contract = btcb_info.contract if btcb_info else BTCB_CONTRACT
-    
+    qual_info = resolve(QUALIFIER_SYMBOL)
+    qual_contract = qual_info.contract if qual_info else QUALIFIER_FALLBACK_CONTRACT
+
+    # Reference price for the round-trip
+    from data.cmc_client import fetch_cmc_quotes
+    quotes = await fetch_cmc_quotes()
+    qual_quote = quotes.get(QUALIFIER_SYMBOL.upper())
+    qual_price = qual_quote.price if qual_quote else 0.0
+
     opened_at = datetime.now(timezone.utc).isoformat()
     trade_id = f"QUAL:{uuid.uuid4()}"
-    
-    # Phase 1: Swap USDT -> BTCB
+
+    # Phase 1: Swap USDT -> qualifier token
     buy_amount = Decimal("1.50")
-    print(f"[QUALIFIER] Swapping $1.50 USDT -> BTCB...")
-    
-    # We estimate received tokens based on reference price or quote
-    # Default BTCB price around $60,000, so $1.50 = 0.000025 BTCB
-    min_btcb_out = Decimal("0.00002")  # soft min
-    
+    print(f"[QUALIFIER] Swapping $1.50 USDT -> {QUALIFIER_SYMBOL}...")
+
+    min_out = Decimal("0.0")  # soft min; slippage handled in swap()
+
     buy_res = await executor.swap(
         token_in=usdt_contract,
-        token_out=btcb_contract,
+        token_out=qual_contract,
         amount_in=buy_amount,
-        min_out=min_btcb_out,
-        reason="QUALIFIER_ENTRY"
+        min_out=min_out,
+        reason="QUALIFIER_ENTRY",
+        ref_price=qual_price
     )
     
     if not buy_res.success:
@@ -71,8 +79,8 @@ async def execute_qualifier_trade(session: Session, executor: TwakExecutor):
         id=trade_id,
         opened_at=opened_at,
         closed_at=None,
-        symbol="BTCB",
-        contract=btcb_contract,
+        symbol=QUALIFIER_SYMBOL,
+        contract=qual_contract,
         status="open",
         invested=1.50,
         pnl_usd=0.0,
@@ -93,16 +101,17 @@ async def execute_qualifier_trade(session: Session, executor: TwakExecutor):
     print("[QUALIFIER] Swap entry complete. Holding for 60 seconds...")
     await asyncio.sleep(60)
     
-    # Phase 2: Swap BTCB -> USDT
+    # Phase 2: Swap qualifier token -> USDT
     sell_qty = Decimal(str(buy_res.amount_out))
-    print(f"[QUALIFIER] Swapping {sell_qty} BTCB back to USDT...")
-    
+    print(f"[QUALIFIER] Swapping {sell_qty} {QUALIFIER_SYMBOL} back to USDT...")
+
     sell_res = await executor.swap(
-        token_in=btcb_contract,
+        token_in=qual_contract,
         token_out=usdt_contract,
         amount_in=sell_qty,
         min_out=Decimal("0.0"),
-        reason="QUALIFIER_EXIT"
+        reason="QUALIFIER_EXIT",
+        ref_price=qual_price
     )
     
     closed_at = datetime.now(timezone.utc).isoformat()

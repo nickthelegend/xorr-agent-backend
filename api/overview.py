@@ -33,8 +33,21 @@ async def get_overview(session: Session = Depends(get_session)):
 
     bnb_price = 600.0  # reference price
     bnb_usd_val = bnb_bal * bnb_price
-    total_portfolio_usd = usdt_bal + bnb_usd_val
-    
+
+    # Value open positions at current market price so deployed capital is counted
+    from data.cmc_client import fetch_cmc_quotes
+    quotes = await fetch_cmc_quotes()
+    bnb_q = quotes.get("BNB")
+    if bnb_q and bnb_q.price > 0:
+        bnb_price = bnb_q.price
+        bnb_usd_val = bnb_bal * bnb_price
+    open_positions_usd = 0.0
+    for p in positions:
+        q = quotes.get(p.symbol.upper())
+        open_positions_usd += (p.size * q.price) if (q and q.price > 0) else p.invested
+
+    total_portfolio_usd = usdt_bal + bnb_usd_val + open_positions_usd
+
     # Calculate PnL stats from closed trades
     closed_trades = [t for t in trades if t.status != "open"]
     total_pnl_usd = sum(t.pnl_usd for t in closed_trades)
@@ -58,8 +71,8 @@ async def get_overview(session: Session = Depends(get_session)):
     total_closed = len(closed_trades)
     win_rate_pct = (wins / total_closed * 100.0) if total_closed > 0 else 0.0
 
-    # Return percentage from starting capital of $100
-    starting_capital = 100.0
+    # Return percentage measured against the captured starting-equity baseline
+    starting_capital = state.start_equity if state.start_equity > 0 else 100.0
     total_return_pct = (total_portfolio_usd - starting_capital) / starting_capital * 100.0
 
     # Fear and Greed
