@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+var/
+.env
+data_store/trades.db
+data_store/decisions.jsonl
+data_store/de421.bsp
+data_store/de440s.bsp
+logs/*.log
