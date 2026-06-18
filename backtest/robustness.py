@@ -41,6 +41,9 @@ PRIMARY_PARAM = {
     "cascade_filter_perp": ("adaptive_percentile", 95.0),
     "volume_confirmed_reversion_perp": ("adaptive_percentile", 95.0),
     "burst_scalper_perp": ("adaptive_percentile", 95.0),
+    "cascade_consec_perp": ("consec_bars", 4),
+    "dominant_burst_perp": ("burst_imbalance_ratio", 5.0),
+    "adaptive_p99_momentum_perp": ("adaptive_percentile", 95.0),
 }
 DEFAULT_PARAM = ("liq_z_threshold", 2.5)   # most strategies are liq-cascade gated
 

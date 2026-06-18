@@ -55,6 +55,9 @@ STRATEGIES.update(_LIQ_TREND_IDEAS)
 # Adaptive-percentile performance family
 from strategies.perf_liq import IDEAS as _PERF_LIQ_IDEAS
 STRATEGIES.update(_PERF_LIQ_IDEAS)
+# moon-dev momentum set (exact mechanics)
+from strategies.momentum_liq import IDEAS as _MOMENTUM_LIQ_IDEAS
+STRATEGIES.update(_MOMENTUM_LIQ_IDEAS)
 
 def active_strategies(settings, suspended_list: List[str] = None,
                       promoted_list: List[str] = None) -> List[BaseStrategy]:

@@ -107,6 +107,14 @@ class Settings(BaseSettings):
     enable_strategy_volume_confirmed_reversion_perp: bool = Field(default=True)      # OOS +0.142
     enable_strategy_adaptive_percentile_momentum_perp: bool = Field(default=False)   # failed OOS -> shadow
     enable_strategy_burst_scalper_perp: bool = Field(default=False)                  # weak survivor -> shadow
+    # moon-dev momentum set (exact mechanics) — gauntlet-gated, mostly shadow
+    enable_strategy_cascade_consec_perp: bool = Field(default=False)        # momentum -> failed OOS, shadow
+    enable_strategy_zscore_advol_perp: bool = Field(default=False)          # momentum -> failed OOS, shadow
+    enable_strategy_volume_momentum_perp: bool = Field(default=False)       # momentum -> failed OOS, shadow
+    enable_strategy_dominant_burst_perp: bool = Field(default=True)         # ENABLED: survived gauntlet (OOS +0.177, 5/5, fades 5x bursts)
+    enable_strategy_adaptive_p99_momentum_perp: bool = Field(default=False) # momentum -> failed OOS, shadow
+    consec_bars: int = Field(default=4)                    # cascade = N consecutive same-dir bars
+    burst_imbalance_ratio: float = Field(default=5.0)      # dominant-side burst: one side 5x the other
     liq_big_z_threshold: float = Field(default=3.0)        # "big liq" gate for the reversal-fade
     liq_relspike_threshold: float = Field(default=3.0)     # relative-spike gate (vs rolling regime)
     # MACD + liq strategies ("momentum is the right way to trade liquidations")
@@ -120,7 +128,7 @@ class Settings(BaseSettings):
     # (the 5 continuation ideas were negative -> left disabled; 2 marginal -> shadow below)
     # Registered-but-disabled strategies that run as SHADOW (paper) live; the arbiter
     # auto-promotes any whose shadow expectancy proves out (>=8 trades, >0.25R).
-    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp,liq_divergence_fade_perp,liq_failed_breakdown_perp,donchian_perp,burst_scalper_perp,adaptive_percentile_momentum_perp")
+    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp,liq_divergence_fade_perp,liq_failed_breakdown_perp,donchian_perp,burst_scalper_perp,adaptive_percentile_momentum_perp,cascade_consec_perp,zscore_advol_perp,volume_momentum_perp,adaptive_p99_momentum_perp")
     # geektrade vol-squeeze (BB inside KC + volume), exact published params
     volsq_len: int = Field(default=20)
     volsq_bb_mult: float = Field(default=2.0)
