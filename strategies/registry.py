@@ -49,6 +49,10 @@ STRATEGIES = {
     "xsect_momentum": CrossSectionalMomentumStrategy,
 }
 
+# 10 liquidation + trend-break ideas (registered; enabled per-backtest below)
+from strategies.liq_trend_ideas import IDEAS as _LIQ_TREND_IDEAS
+STRATEGIES.update(_LIQ_TREND_IDEAS)
+
 def active_strategies(settings, suspended_list: List[str] = None,
                       promoted_list: List[str] = None) -> List[BaseStrategy]:
     """Strategies that are ACTIVE this scan: (config-enabled OR arbiter-promoted

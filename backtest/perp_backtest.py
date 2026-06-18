@@ -49,6 +49,8 @@ STRATS = {
     "liq_macd_momentum_perp": LiqMacdMomentumPerpStrategy,
     "macd_liq_reversal_perp": MacdLiqReversalPerpStrategy,
 }
+from strategies.liq_trend_ideas import IDEAS as _LIQ_TREND_IDEAS
+STRATS.update(_LIQ_TREND_IDEAS)
 
 PERP_FEE = 0.0006          # taker fee per side on notional
 MAX_HOLD_BARS = 12         # 12 x 1h = 12h (matches monitor max_hold for perp)

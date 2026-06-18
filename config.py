@@ -104,9 +104,14 @@ class Settings(BaseSettings):
     enable_strategy_macd_regime_perp: bool = Field(default=False)
     enable_strategy_liq_macd_momentum_perp: bool = Field(default=False)
     enable_strategy_macd_liq_reversal_perp: bool = Field(default=False)
+    # Liq + trend-break ideas — ENABLED winners (reversion beats continuation, again):
+    enable_strategy_liq_support_reversion_perp: bool = Field(default=True)   # +0.215R, 68% win, 5.1% DD
+    enable_strategy_liq_climax_reversion_perp: bool = Field(default=True)    # +0.145R, 63% win, 3.4% DD
+    enable_strategy_liq_squeeze_break_perp: bool = Field(default=True)       # +0.147R, 67% win, 5.2% DD
+    # (the 5 continuation ideas were negative -> left disabled; 2 marginal -> shadow below)
     # Registered-but-disabled strategies that run as SHADOW (paper) live; the arbiter
     # auto-promotes any whose shadow expectancy proves out (>=8 trades, >0.25R).
-    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp")
+    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp,liq_divergence_fade_perp,liq_failed_breakdown_perp")
     # geektrade vol-squeeze (BB inside KC + volume), exact published params
     volsq_len: int = Field(default=20)
     volsq_bb_mult: float = Field(default=2.0)
