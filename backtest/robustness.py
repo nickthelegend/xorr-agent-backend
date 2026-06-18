@@ -44,6 +44,9 @@ PRIMARY_PARAM = {
     "cascade_consec_perp": ("consec_bars", 4),
     "dominant_burst_perp": ("burst_imbalance_ratio", 5.0),
     "adaptive_p99_momentum_perp": ("adaptive_percentile", 95.0),
+    "tsi_mr_perp": ("tsi_entry_thresh", 25.0),
+    "uo_mr_perp": ("uo_oversold", 35.0),
+    "aroon_mr_perp": ("aroon_entry_thresh", 50.0),
 }
 DEFAULT_PARAM = ("liq_z_threshold", 2.5)   # most strategies are liq-cascade gated
 
@@ -221,6 +224,7 @@ DEFAULT_SET = [
     "adaptive_percentile_reversion_perp", "adaptive_percentile_momentum_perp",
     "cascade_filter_perp", "volume_confirmed_reversion_perp", "burst_scalper_perp",
     "liq_zscore_perp", "liq_divergence_fade_perp", "supertrend_perp",
+    "tsi_mr_perp", "uo_mr_perp", "aroon_mr_perp",
 ]
 
 

@@ -21,6 +21,7 @@ and an out-of-sample robustness gauntlet).
 7. [07 — The Journey](07-the-journey.md) — chronological record of everything that was asked and built.
 8. [08 — Performance Strategies](08-performance-strategies.md) — the 5 strategies that hit 500%+ / <25% DD + their OOS check.
 9. [09 — Verification](09-verification.md) ✅ — proof the sim, all layers, and the live path are tested and working.
+10. [10 — trader.dev](10-trader-dev.md) — mining a 36k-strategy database; it independently confirms reversion>momentum. We ported its 3 best oscillators and gauntleted them (1 enabled, 2 shadow).
 
 Also at the repo root: [`COMPETITION_RUNBOOK.md`](../COMPETITION_RUNBOOK.md) (go-live steps) and [`ROBUSTNESS.md`](../ROBUSTNESS.md) (the ranked survival table).
 
@@ -35,6 +36,6 @@ were tested just as hard and **consistently failed out-of-sample**, so they're
 disabled or shadow-tested, never risked blindly.
 
 ## Current book (auto-changes as the arbiter promotes/suspends)
-- **Enabled (14):** the spot book (donchian_breakout ⭐, trend_follow, whale_flow, capitulation, news_catalyst, xsect_momentum) + the robust perp book (salamander, liq_reversion, liq_support_reversion, liq_climax_reversion, adaptive_percentile_reversion, cascade_filter, volume_confirmed_reversion, dominant_burst).
-- **Shadow-tested (17):** paper-traded live; the arbiter auto-promotes any that prove out (≥8 trades, >0.25R).
-- **Disabled (11):** failed the gauntlet (overfit, momentum, or cost-fragile).
+- **Enabled (20):** the spot book (donchian_breakout ⭐, trend_follow, whale_flow, capitulation, news_catalyst, xsect_momentum) + the robust perp reversion book (salamander, liq_reversion, liq_support_reversion, liq_climax_reversion, adaptive_percentile_reversion, cascade_filter, volume_confirmed_reversion, dominant_burst, the 5 perf reversion strategies, and **aroon_mr_perp** — the trader.dev oscillator that survived the gauntlet).
+- **Shadow-tested (19):** paper-traded live; the arbiter auto-promotes any that prove out (≥8 trades, >0.25R). Includes `tsi_mr_perp` / `uo_mr_perp` (trader.dev oscillators that passed OOS but failed 2× cost).
+- **Disabled:** failed the gauntlet (overfit, momentum, or cost-fragile).

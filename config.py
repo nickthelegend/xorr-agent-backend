@@ -115,6 +115,15 @@ class Settings(BaseSettings):
     enable_strategy_adaptive_p99_momentum_perp: bool = Field(default=False) # momentum -> failed OOS, shadow
     consec_bars: int = Field(default=4)                    # cascade = N consecutive same-dir bars
     burst_imbalance_ratio: float = Field(default=5.0)      # dominant-side burst: one side 5x the other
+    # Oscillator MR ported from trader.dev (gauntlet-gated)
+    enable_strategy_tsi_mr_perp: bool = Field(default=False)        # OOS+ but fails comm2x -> shadow
+    enable_strategy_uo_mr_perp: bool = Field(default=False)         # OOS+ but fails comm2x -> shadow
+    enable_strategy_aroon_mr_perp: bool = Field(default=True)       # ENABLED: survived gauntlet (OOS+, 5/5, comm2x+)
+    tsi_entry_thresh: float = Field(default=25.0)
+    uo_oversold: float = Field(default=35.0)
+    uo_overbought: float = Field(default=65.0)
+    aroon_period: int = Field(default=25)
+    aroon_entry_thresh: float = Field(default=50.0)
     # 5 NEW performance liquidation-reversion ideas — each hit 500%+/<25%DD in the
     # compounding backtest AND survived the known/unknown OOS split. ENABLED. (Live
     # they trade at the conservative perp caps; the 500% is the edge at 5x demo sizing.)
@@ -136,7 +145,7 @@ class Settings(BaseSettings):
     # (the 5 continuation ideas were negative -> left disabled; 2 marginal -> shadow below)
     # Registered-but-disabled strategies that run as SHADOW (paper) live; the arbiter
     # auto-promotes any whose shadow expectancy proves out (>=8 trades, >0.25R).
-    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp,liq_divergence_fade_perp,liq_failed_breakdown_perp,donchian_perp,burst_scalper_perp,adaptive_percentile_momentum_perp,cascade_consec_perp,zscore_advol_perp,volume_momentum_perp,adaptive_p99_momentum_perp")
+    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp,liq_divergence_fade_perp,liq_failed_breakdown_perp,donchian_perp,burst_scalper_perp,adaptive_percentile_momentum_perp,cascade_consec_perp,zscore_advol_perp,volume_momentum_perp,adaptive_p99_momentum_perp,tsi_mr_perp,uo_mr_perp")
     # geektrade vol-squeeze (BB inside KC + volume), exact published params
     volsq_len: int = Field(default=20)
     volsq_bb_mult: float = Field(default=2.0)
