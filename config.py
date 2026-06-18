@@ -98,10 +98,15 @@ class Settings(BaseSettings):
     enable_strategy_liq_zscore_perp: bool = Field(default=False)     # continuation: weak (-0.05R), shadow-only
     enable_strategy_liq_relspike_perp: bool = Field(default=False)   # continuation: breakeven, shadow-only
     liq_z_threshold: float = Field(default=2.5)            # cascade z-score gate (moon-dev: 2.5sigma)
+    liq_big_z_threshold: float = Field(default=3.0)        # "big liq" gate for the reversal-fade
     liq_relspike_threshold: float = Field(default=3.0)     # relative-spike gate (vs rolling regime)
+    # MACD + liq strategies ("momentum is the right way to trade liquidations")
+    enable_strategy_macd_regime_perp: bool = Field(default=False)
+    enable_strategy_liq_macd_momentum_perp: bool = Field(default=False)
+    enable_strategy_macd_liq_reversal_perp: bool = Field(default=False)
     # Registered-but-disabled strategies that run as SHADOW (paper) live; the arbiter
     # auto-promotes any whose shadow expectancy proves out (>=8 trades, >0.25R).
-    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp")
+    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp")
     # geektrade vol-squeeze (BB inside KC + volume), exact published params
     volsq_len: int = Field(default=20)
     volsq_bb_mult: float = Field(default=2.0)

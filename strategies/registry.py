@@ -18,6 +18,9 @@ from strategies.rsi_div_perp import RsiDivPerpStrategy
 from strategies.liq_flow_perp import (
     LiqReversionPerpStrategy, LiqZscorePerpStrategy, LiqRelspikePerpStrategy,
 )
+from strategies.macd_perp import (
+    MacdRegimePerpStrategy, LiqMacdMomentumPerpStrategy, MacdLiqReversalPerpStrategy,
+)
 from strategies.rsi_reversion import RsiReversionStrategy
 from strategies.cross_sectional_momentum import CrossSectionalMomentumStrategy
 
@@ -39,6 +42,9 @@ STRATEGIES = {
     "liq_reversion_perp": LiqReversionPerpStrategy,
     "liq_zscore_perp": LiqZscorePerpStrategy,
     "liq_relspike_perp": LiqRelspikePerpStrategy,
+    "macd_regime_perp": MacdRegimePerpStrategy,
+    "liq_macd_momentum_perp": LiqMacdMomentumPerpStrategy,
+    "macd_liq_reversal_perp": MacdLiqReversalPerpStrategy,
     "rsi_reversion": RsiReversionStrategy,
     "xsect_momentum": CrossSectionalMomentumStrategy,
 }

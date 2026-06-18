@@ -30,6 +30,9 @@ from strategies.rsi_div_perp import RsiDivPerpStrategy
 from strategies.liq_flow_perp import (
     LiqReversionPerpStrategy, LiqZscorePerpStrategy, LiqRelspikePerpStrategy,
 )
+from strategies.macd_perp import (
+    MacdRegimePerpStrategy, LiqMacdMomentumPerpStrategy, MacdLiqReversalPerpStrategy,
+)
 from backtest.data_loader import get_klines_for_backtest
 from config import settings
 
@@ -42,6 +45,9 @@ STRATS = {
     "liq_reversion_perp": LiqReversionPerpStrategy,
     "liq_zscore_perp": LiqZscorePerpStrategy,
     "liq_relspike_perp": LiqRelspikePerpStrategy,
+    "macd_regime_perp": MacdRegimePerpStrategy,
+    "liq_macd_momentum_perp": LiqMacdMomentumPerpStrategy,
+    "macd_liq_reversal_perp": MacdLiqReversalPerpStrategy,
 }
 
 PERP_FEE = 0.0006          # taker fee per side on notional
