@@ -52,6 +52,9 @@ STRATEGIES = {
 # 10 liquidation + trend-break ideas (registered; enabled per-backtest below)
 from strategies.liq_trend_ideas import IDEAS as _LIQ_TREND_IDEAS
 STRATEGIES.update(_LIQ_TREND_IDEAS)
+# Adaptive-percentile performance family
+from strategies.perf_liq import IDEAS as _PERF_LIQ_IDEAS
+STRATEGIES.update(_PERF_LIQ_IDEAS)
 
 def active_strategies(settings, suspended_list: List[str] = None,
                       promoted_list: List[str] = None) -> List[BaseStrategy]:

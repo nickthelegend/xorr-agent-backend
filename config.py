@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     enable_strategy_vol_squeeze: bool = Field(default=False)         # -0.95R
     enable_strategy_whale_flow: bool = Field(default=True)
     enable_strategy_donchian_breakout: bool = Field(default=True)    # +1.35R star (spot long)
-    enable_strategy_donchian_perp: bool = Field(default=True)        # long/short perp breakouts
+    enable_strategy_donchian_perp: bool = Field(default=False)       # -> shadow: failed comm2x (dies at 2x cost)
     enable_strategy_salamander_perp: bool = Field(default=True)      # long/short perp pullbacks — best shorts (+0.55R)
     enable_strategy_supertrend_perp: bool = Field(default=False)     # marginal (+0.04R); available, off by default
     enable_strategy_rsi_reversion: bool = Field(default=False)       # -0.52R
@@ -98,6 +98,15 @@ class Settings(BaseSettings):
     enable_strategy_liq_zscore_perp: bool = Field(default=False)     # continuation: weak (-0.05R), shadow-only
     enable_strategy_liq_relspike_perp: bool = Field(default=False)   # continuation: breakeven, shadow-only
     liq_z_threshold: float = Field(default=2.5)            # cascade z-score gate (moon-dev: 2.5sigma)
+    # Adaptive-percentile family (self-calibrating threshold vs fixed z — robust)
+    adaptive_percentile: float = Field(default=95.0)       # fire when move/liq >= Nth pctile of its own recent regime
+    adaptive_lookback: int = Field(default=100)            # bars for the percentile window
+    # ENABLED — survived the 4-way robustness gauntlet (OOS/Sens/comm2x/multi):
+    enable_strategy_adaptive_percentile_reversion_perp: bool = Field(default=True)   # OOS +0.203, rank #2
+    enable_strategy_cascade_filter_perp: bool = Field(default=True)                  # OOS +0.230, rank #1
+    enable_strategy_volume_confirmed_reversion_perp: bool = Field(default=True)      # OOS +0.142
+    enable_strategy_adaptive_percentile_momentum_perp: bool = Field(default=False)   # failed OOS -> shadow
+    enable_strategy_burst_scalper_perp: bool = Field(default=False)                  # weak survivor -> shadow
     liq_big_z_threshold: float = Field(default=3.0)        # "big liq" gate for the reversal-fade
     liq_relspike_threshold: float = Field(default=3.0)     # relative-spike gate (vs rolling regime)
     # MACD + liq strategies ("momentum is the right way to trade liquidations")
@@ -107,11 +116,11 @@ class Settings(BaseSettings):
     # Liq + trend-break ideas — ENABLED winners (reversion beats continuation, again):
     enable_strategy_liq_support_reversion_perp: bool = Field(default=True)   # +0.215R, 68% win, 5.1% DD
     enable_strategy_liq_climax_reversion_perp: bool = Field(default=True)    # +0.145R, 63% win, 3.4% DD
-    enable_strategy_liq_squeeze_break_perp: bool = Field(default=True)       # +0.147R, 67% win, 5.2% DD
+    enable_strategy_liq_squeeze_break_perp: bool = Field(default=False)      # DISABLED: failed OOS (-0.027) — overfit caught by the gauntlet
     # (the 5 continuation ideas were negative -> left disabled; 2 marginal -> shadow below)
     # Registered-but-disabled strategies that run as SHADOW (paper) live; the arbiter
     # auto-promotes any whose shadow expectancy proves out (>=8 trades, >0.25R).
-    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp,liq_divergence_fade_perp,liq_failed_breakdown_perp")
+    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp,liq_divergence_fade_perp,liq_failed_breakdown_perp,donchian_perp,burst_scalper_perp,adaptive_percentile_momentum_perp")
     # geektrade vol-squeeze (BB inside KC + volume), exact published params
     volsq_len: int = Field(default=20)
     volsq_bb_mult: float = Field(default=2.0)
