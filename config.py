@@ -92,9 +92,16 @@ class Settings(BaseSettings):
     donchian_channel_bars: int = Field(default=55)          # trustdan-validated: 55-bar >> 20-bar (+5.1% vs +2.4%)
     enable_strategy_volsqueeze_perp: bool = Field(default=False)
     enable_strategy_rsi_div_perp: bool = Field(default=False)
+    # Liquidation-flow strategies (moon-dev class). Need the real liq tape live;
+    # backtest uses a kline proxy. Shadow-only until proven on live data.
+    enable_strategy_liq_reversion_perp: bool = Field(default=True)   # ENABLED: +0.247R, 63% win, +28.7% (proxy) — best in book
+    enable_strategy_liq_zscore_perp: bool = Field(default=False)     # continuation: weak (-0.05R), shadow-only
+    enable_strategy_liq_relspike_perp: bool = Field(default=False)   # continuation: breakeven, shadow-only
+    liq_z_threshold: float = Field(default=2.5)            # cascade z-score gate (moon-dev: 2.5sigma)
+    liq_relspike_threshold: float = Field(default=3.0)     # relative-spike gate (vs rolling regime)
     # Registered-but-disabled strategies that run as SHADOW (paper) live; the arbiter
     # auto-promotes any whose shadow expectancy proves out (>=8 trades, >0.25R).
-    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp")
+    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp")
     # geektrade vol-squeeze (BB inside KC + volume), exact published params
     volsq_len: int = Field(default=20)
     volsq_bb_mult: float = Field(default=2.0)

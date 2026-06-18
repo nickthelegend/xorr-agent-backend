@@ -176,4 +176,10 @@ async def health():
         ws = ws_feed.status()
     except Exception:
         ws = {}
-    return {"ok": ok, "db": db_ok, "scheduler": h, "wsFeed": ws, "t": datetime.now(timezone.utc).isoformat()}
+    try:
+        from data import liq_feed
+        liq = liq_feed.status()
+    except Exception:
+        liq = {}
+    return {"ok": ok, "db": db_ok, "scheduler": h, "wsFeed": ws, "liqFeed": liq,
+            "t": datetime.now(timezone.utc).isoformat()}

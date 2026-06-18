@@ -47,6 +47,31 @@ def test_scheduler_health_shape():
     assert isinstance(h["running"], bool)
 
 
+def test_liq_cascade_proxy_and_reversion():
+    import asyncio
+    from datetime import datetime, timezone, timedelta
+    from core.types import Candle, MarketContext
+    from data.cascade import detect_cascade
+    from strategies.liq_flow_perp import LiqReversionPerpStrategy
+
+    base = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    closes = [100.0 + 0.02 * i for i in range(60)]  # gentle drift (small returns)
+    closes[-1] = closes[-2] * 0.94                   # sharp -6% flush on the last bar
+    candles = []
+    for i, c in enumerate(closes):
+        v = 100.0 if i < 59 else 600.0               # volume spike on the flush
+        candles.append(Candle(ts=base + timedelta(hours=i), open=c, high=c * 1.001,
+                              low=c * 0.999, close=c, volume=v))
+    casc = detect_cascade("ETH", candles)
+    assert casc is not None and casc["flush_dir"] == "down" and casc["z"] >= 2.5
+
+    ctx = MarketContext(timestamp=datetime.now(timezone.utc), fear_greed_value=50,
+                        fear_greed_label="N", btc_dominance=55, total_market_cap_usd=2.5e12,
+                        total_market_cap_change_24h=0, bnb_price_usd=600, regime="CHOP")
+    sig = asyncio.run(LiqReversionPerpStrategy().evaluate("ETH", [], candles, ctx))
+    assert sig is not None and sig.direction == "long" and sig.venue == "perp"  # FADE the down flush
+
+
 def test_funding_fade_logic():
     from data.funding import funding_confidence_mult
     crowded_longs = {"crowding": "crowded_longs", "funding_bps": 65.0, "stretch_score": 52.0}

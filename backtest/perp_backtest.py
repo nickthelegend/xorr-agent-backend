@@ -27,6 +27,9 @@ from strategies.supertrend_perp import SupertrendPerpStrategy
 from strategies.salamander_perp import SalamanderPerpStrategy
 from strategies.volsqueeze_perp import VolSqueezePerpStrategy
 from strategies.rsi_div_perp import RsiDivPerpStrategy
+from strategies.liq_flow_perp import (
+    LiqReversionPerpStrategy, LiqZscorePerpStrategy, LiqRelspikePerpStrategy,
+)
 from backtest.data_loader import get_klines_for_backtest
 from config import settings
 
@@ -36,6 +39,9 @@ STRATS = {
     "salamander_perp": SalamanderPerpStrategy,
     "volsqueeze_perp": VolSqueezePerpStrategy,
     "rsi_div_perp": RsiDivPerpStrategy,
+    "liq_reversion_perp": LiqReversionPerpStrategy,
+    "liq_zscore_perp": LiqZscorePerpStrategy,
+    "liq_relspike_perp": LiqRelspikePerpStrategy,
 }
 
 PERP_FEE = 0.0006          # taker fee per side on notional
