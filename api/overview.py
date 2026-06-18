@@ -41,10 +41,12 @@ async def get_overview(session: Session = Depends(get_session)):
     if bnb_q and bnb_q.price > 0:
         bnb_price = bnb_q.price
         bnb_usd_val = bnb_bal * bnb_price
+    from core import perp_math
     open_positions_usd = 0.0
     for p in positions:
         q = quotes.get(p.symbol.upper())
-        open_positions_usd += (p.size * q.price) if (q and q.price > 0) else p.invested
+        # perp-aware: spot = units*price; perp = margin + directional uPnL
+        open_positions_usd += perp_math.position_equity(p, q.price if (q and q.price > 0) else 0.0)
 
     total_portfolio_usd = usdt_bal + bnb_usd_val + open_positions_usd
 

@@ -9,6 +9,12 @@ from strategies.mean_reversion import MeanReversionStrategy
 from strategies.trend_follow import TrendFollowStrategy
 from strategies.vol_squeeze import VolSqueezeStrategy
 from strategies.whale_flow import WhaleFlowStrategy
+from strategies.donchian_breakout import DonchianBreakoutStrategy
+from strategies.donchian_perp import DonchianPerpStrategy
+from strategies.salamander_perp import SalamanderPerpStrategy
+from strategies.supertrend_perp import SupertrendPerpStrategy
+from strategies.rsi_reversion import RsiReversionStrategy
+from strategies.cross_sectional_momentum import CrossSectionalMomentumStrategy
 
 STRATEGIES = {
     "momentum_pullback": MomentumPullbackStrategy,
@@ -19,6 +25,12 @@ STRATEGIES = {
     "trend_follow": TrendFollowStrategy,
     "vol_squeeze": VolSqueezeStrategy,
     "whale_flow": WhaleFlowStrategy,
+    "donchian_breakout": DonchianBreakoutStrategy,
+    "donchian_perp": DonchianPerpStrategy,
+    "salamander_perp": SalamanderPerpStrategy,
+    "supertrend_perp": SupertrendPerpStrategy,
+    "rsi_reversion": RsiReversionStrategy,
+    "xsect_momentum": CrossSectionalMomentumStrategy,
 }
 
 def active_strategies(settings, suspended_list: List[str] = None) -> List[BaseStrategy]:
@@ -48,5 +60,17 @@ def active_strategies(settings, suspended_list: List[str] = None) -> List[BaseSt
         active.append(VolSqueezeStrategy())
     if settings.enable_strategy_whale_flow and "whale_flow" not in suspended_list:
         active.append(WhaleFlowStrategy())
-        
+    if settings.enable_strategy_donchian_breakout and "donchian_breakout" not in suspended_list:
+        active.append(DonchianBreakoutStrategy())
+    if getattr(settings, "enable_strategy_donchian_perp", True) and "donchian_perp" not in suspended_list:
+        active.append(DonchianPerpStrategy())
+    if getattr(settings, "enable_strategy_salamander_perp", True) and "salamander_perp" not in suspended_list:
+        active.append(SalamanderPerpStrategy())
+    if getattr(settings, "enable_strategy_supertrend_perp", False) and "supertrend_perp" not in suspended_list:
+        active.append(SupertrendPerpStrategy())
+    if settings.enable_strategy_rsi_reversion and "rsi_reversion" not in suspended_list:
+        active.append(RsiReversionStrategy())
+    if settings.enable_strategy_xsect_momentum and "xsect_momentum" not in suspended_list:
+        active.append(CrossSectionalMomentumStrategy())
+
     return active

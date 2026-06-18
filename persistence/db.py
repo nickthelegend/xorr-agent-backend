@@ -41,6 +41,22 @@ _MIGRATIONS = {
         ("registered", "BOOLEAN", "0"),
         ("registered_tx", "VARCHAR", "NULL"),
         ("start_equity", "FLOAT", "0.0"),
+        ("risk_paused_until", "FLOAT", "0.0"),
+    ],
+    "trade": [
+        ("entry_price", "FLOAT", "NULL"),
+        ("exit_price", "FLOAT", "NULL"),
+        ("direction", "VARCHAR", "'long'"),
+        ("venue", "VARCHAR", "'spot'"),
+        ("leverage", "FLOAT", "1.0"),
+    ],
+    "position": [
+        ("is_perp", "BOOLEAN", "0"),
+        ("venue", "VARCHAR", "'spot'"),
+        ("direction", "VARCHAR", "'long'"),
+        ("leverage", "FLOAT", "1.0"),
+        ("margin_usd", "FLOAT", "0.0"),
+        ("liquidation_price", "FLOAT", "0.0"),
     ],
 }
 

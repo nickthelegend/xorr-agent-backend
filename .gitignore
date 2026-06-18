@@ -8,8 +8,15 @@ venv/
 .venv/
 var/
 .env
+.env.*
+!.env.example
+# --- SECRETS: never commit the wallet private key / keystore ---
+data_store/agent_keystore.json
+data_store/*.keystore
+*.key
 data_store/trades.db
 data_store/decisions.jsonl
+data_store/oi-state.json
 data_store/de421.bsp
 data_store/de440s.bsp
 logs/*.log

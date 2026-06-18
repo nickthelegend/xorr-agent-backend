@@ -16,8 +16,8 @@ async def passes(ctx: MarketContext, symbol: str) -> bool:
         logger.warning(f"No quote found for {symbol} in volume gate")
         return False
         
-    if quote.volume_24h < 500000.0:
-        logger.info(f"[VOLUME GATE] {symbol} rejected: 24h volume ${quote.volume_24h:,.2f} < $500k")
+    if quote.volume_24h < 250000.0:
+        logger.info(f"[VOLUME GATE] {symbol} rejected: 24h volume ${quote.volume_24h:,.2f} < $250k")
         return False
 
     # 2. Volume regime check (5m bar)
@@ -35,8 +35,8 @@ async def passes(ctx: MarketContext, symbol: str) -> bool:
         if rolling_mean == 0:
             return True
             
-        if current_vol < 0.5 * rolling_mean:
-            logger.info(f"[VOLUME GATE] {symbol} rejected: current 5m vol {current_vol:.1f} < 0.5x mean ({rolling_mean:.1f})")
+        if current_vol < 0.25 * rolling_mean:
+            logger.info(f"[VOLUME GATE] {symbol} rejected: current 5m vol {current_vol:.1f} < 0.25x mean ({rolling_mean:.1f})")
             return False
             
         return True

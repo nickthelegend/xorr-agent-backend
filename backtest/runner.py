@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 import uuid
 
-from backtest.engine import BacktestEngine, BacktestTrade
+from backtest.engine import BacktestEngine, BacktestTrade, BT_SLIPPAGE, BT_FEE
 from backtest.reporter import compile_report, BacktestReport
 from data.tokens import iter_tradable
 from config import settings
@@ -103,7 +103,7 @@ async def run_walk_forward_backtest(
             if df is not None and not df.empty:
                 final_price = float(df.iloc[-1]["close"])
                 
-            exit_usd = pos.size * final_price * 0.995 * (1.0 - 0.0025)
+            exit_usd = pos.size * final_price * (1.0 - BT_SLIPPAGE) * (1.0 - BT_FEE)
             pnl_usd = exit_usd - pos.invested
             pnl_pct = (pnl_usd / pos.invested) * 100.0 if pos.invested > 0 else 0.0
             

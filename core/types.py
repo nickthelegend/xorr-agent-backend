@@ -68,6 +68,11 @@ class Signal:
     strategy_name: string
     entry_type: string = ""
     news_title: Optional[string] = None
+    n_agree: int = 1               # how many strategies agreed (ensemble conviction)
+    # --- Direction / venue (default = long spot, so existing strategies are unchanged) ---
+    direction: string = "long"     # "long" | "short"
+    venue: string = "spot"         # "spot" | "perp"
+    leverage: float = 1.0          # >1 only meaningful for perp venue
 
 @dataclass
 class ScoredSignal:

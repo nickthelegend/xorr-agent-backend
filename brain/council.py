@@ -74,20 +74,24 @@ async def call_model(
             "latency": int((time.time() - t0) * 1000)
         }
 
-async def score_council(signals: List[Signal], ctx: MarketContext) -> List[CouncilDecision]:
+async def score_council(signals: List[Signal], ctx: MarketContext, min_conf: float = None) -> List[CouncilDecision]:
     """
     Evaluates list of signals using the 3-model Groq Council.
     Redistributes weights proportionally on model failure, applies consensus penalty,
     and returns a list of decisions. Saves individual votes to the database.
+    `min_conf` is the entry confidence bar (defaults to the live setting; the
+    pipeline passes a relaxed value in simulation).
     """
     if not signals:
         return []
+    if min_conf is None:
+        min_conf = settings.council_min_final_confidence
 
     # If Groq API Key is not set (or a placeholder), use deterministic fallback
     groq_key = (settings.groq_api_key or "").strip()
     if not groq_key or groq_key.lower().startswith("your_"):
         logger.warning("[BRAIN] Groq API key not set, using deterministic fallback")
-        return [deterministic_fallback(s, ctx) for s in signals]
+        return [deterministic_fallback(s, ctx, min_conf) for s in signals]
 
     # Initialize client
     client = AsyncGroq(api_key=settings.groq_api_key)
@@ -173,7 +177,7 @@ async def score_council(signals: List[Signal], ctx: MarketContext) -> List[Counc
     # If all models failed, fall back to deterministic scoring
     if not active_results:
         logger.error("[BRAIN] All council models failed. Falling back to deterministic confluence score.")
-        return [deterministic_fallback(s, ctx) for s in signals]
+        return [deterministic_fallback(s, ctx, min_conf) for s in signals]
 
     # Redistribute weights proportionally
     total_active_weight = sum(cfg["weight"] for cfg, _ in active_results)
@@ -249,8 +253,7 @@ async def score_council(signals: List[Signal], ctx: MarketContext) -> List[Counc
         consensus_penalty = min(0.3, 2.0 * consensus)
         final_confidence = council_score * (1.0 - consensus_penalty)
 
-        # Decide Action
-        min_conf = settings.council_min_final_confidence
+        # Decide Action (min_conf passed in; relaxed in sim, disciplined in live)
         action = "enter" if final_confidence >= min_conf else "skip"
 
         decisions.append(CouncilDecision(
@@ -271,8 +274,10 @@ async def score_council(signals: List[Signal], ctx: MarketContext) -> List[Counc
 
     return decisions
 
-def deterministic_fallback(signal: Signal, ctx: MarketContext) -> CouncilDecision:
+def deterministic_fallback(signal: Signal, ctx: MarketContext, min_conf: float = None) -> CouncilDecision:
     """Computes a fallback score based on confluence_score/100."""
+    if min_conf is None:
+        min_conf = settings.council_min_final_confidence
     decision_id = str(uuid.uuid4())
     # Blend market confluence with the strategy's own conviction (mirrors the
     # backtest council model) so counter-trend signals aren't judged on momentum alone.
@@ -295,9 +300,8 @@ def deterministic_fallback(signal: Signal, ctx: MarketContext) -> CouncilDecisio
     except Exception as e:
         logger.warning(f"Failed to persist LLMVote fallback: {e}")
 
-    min_conf = settings.council_min_final_confidence
     action = "enter" if score >= min_conf else "skip"
-    
+
     return CouncilDecision(
         symbol=signal.symbol,
         action=action,

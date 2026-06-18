@@ -101,6 +101,24 @@ async def register_competition(session: Session = Depends(get_session)):
         raise HTTPException(status_code=502, detail=f"Registration failed: {e}")
 
 
+@router.get("/agent/identity")
+async def get_agent_identity():
+    """Read-only ERC-8004 on-chain identity status (BNB AI Agent SDK)."""
+    from core.agent_identity import identity_status
+    return identity_status()
+
+
+@router.post("/agent/identity/register")
+async def register_agent_identity():
+    """Operator action: register XORR's ERC-8004 on-chain identity via the BNB AI
+    Agent SDK (gas-free on testnet). Never auto-invoked."""
+    from core.agent_identity import register_identity
+    try:
+        return register_identity()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Identity registration failed: {e}")
+
+
 @router.post("/engine/scan")
 async def trigger_scan(session: Session = Depends(get_session)):
     # Import scheduler and trigger immediate scan

@@ -61,9 +61,18 @@ async def classify_market_regime() -> str:
 def is_actionable(regime: str, strategy_name: str) -> bool:
     """Returns True if the strategy is allowed to enter in the current regime."""
     s_name = strategy_name.lower()
-    if "momentum" in s_name:
-        # Momentum pullbacks: trending-up or ranging (avoid only confirmed downtrends)
+    if "perp" in s_name:
+        # The perp book is long/short and gates direction by regime INTERNALLY
+        # (long in TREND_UP/CHOP, short in TREND_DOWN/RISK_OFF/CHOP). Let it run
+        # in every regime so it can short the down tape the spot book can't touch.
+        return True
+    if "xsect" in s_name:
+        # Cross-sectional relative-strength: trend-up or ranging, never confirmed downtrend
         return regime in ["TREND_UP", "CHOP"]
+    if "momentum" in s_name:
+        # Momentum pullbacks ONLY in a confirmed uptrend. (Allowing CHOP caused
+        # heavy overtrading and bleed — backtest-validated regression.)
+        return regime == "TREND_UP"
     elif "capitulation" in s_name:
         # Counter-trend bounce after a flush: most useful in weak/falling tape
         return regime in ["TREND_DOWN", "CHOP", "RISK_OFF"]
@@ -73,4 +82,7 @@ def is_actionable(regime: str, strategy_name: str) -> bool:
     elif "news" in s_name:
         # News catalyst bypasses regime checks
         return True
+    elif "donchian" in s_name or "breakout" in s_name:
+        # Breakouts only make sense when not in a confirmed downtrend
+        return regime in ["TREND_UP", "CHOP"]
     return True

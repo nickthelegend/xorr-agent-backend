@@ -99,8 +99,29 @@ class WalletManager:
             except Exception as e:
                 print(f"[WALLET WARNING] Failed to retrieve on-chain token balances: {e}")
 
-        # Check gas status
+        # Check gas status (of the active portfolio view)
         gas_ok = bnb_balance >= GAS_THRESHOLD_BNB
+
+        # Real on-chain snapshot of the self-custody agent wallet — shown in BOTH
+        # modes so the operator can fund it and verify holdings before going live.
+        onchain = {"address": address, "bnb": 0.0, "bnbUsd": 0.0, "usdt": 0.0, "gasOk": False}
+        try:
+            from core.agent_wallet import get_agent_wallet
+            from data.cmc_client import _cmc_quotes_cache
+            w = get_agent_wallet()
+            bnb_q = _cmc_quotes_cache.get("BNB")
+            bnb_px = bnb_q.price if (bnb_q and bnb_q.price > 0) else bnb_price
+            real_bnb = w.bnb_balance()
+            real_usdt = w.token_balance(settings.usdt_contract)
+            onchain = {
+                "address": w.address or address,
+                "bnb": real_bnb,
+                "bnbUsd": round(real_bnb * bnb_px, 2),
+                "usdt": round(real_usdt, 2),
+                "gasOk": real_bnb >= GAS_THRESHOLD_BNB,
+            }
+        except Exception as e:
+            print(f"[WALLET WARNING] on-chain snapshot failed: {e}")
 
         return {
             "address": address,
@@ -108,5 +129,7 @@ class WalletManager:
             "balances": balances_list,
             "gasOk": gas_ok,
             "gasThresholdBnb": GAS_THRESHOLD_BNB,
+            "simulation": self.executor.simulation,
+            "onchain": onchain,
             "qrPngBase64": self.generate_qr_base64(address)
         }

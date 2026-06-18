@@ -18,6 +18,13 @@ from config import settings
 
 logger = logging.getLogger("xorr.backtest.engine")
 
+# Realistic per-leg trading costs for a small ($1-2) swap of a LIQUID large-cap on
+# PancakeSwap: negligible price impact (~10 bps realized slippage) + 0.25% pool fee.
+# (The old model charged 50 bps slippage/leg = 1.5% round-trip, which is unrealistic
+# for liquid tokens and made every non-runaway trade a guaranteed cost-loss.)
+BT_SLIPPAGE = 0.001   # 10 bps realized slippage per leg
+BT_FEE = 0.0025       # 0.25% PancakeSwap pool fee per leg
+
 STRATEGY_ACCURACY = {
     "momentum_pullback": 0.75,
     "fib_golden_pocket": 0.72,
@@ -27,6 +34,9 @@ STRATEGY_ACCURACY = {
     "trend_follow": 0.70,
     "vol_squeeze": 0.73,
     "whale_flow": 0.76,
+    "donchian_breakout": 0.72,
+    "rsi_reversion": 0.74,
+    "xsect_momentum": 0.72,
 }
 
 @dataclass
@@ -214,13 +224,13 @@ class BacktestEngine:
                         self.suspended_strategies.add(strategy)
                         logger.info(f"[ARBITER] Suspended strategy {strategy} (Expectancy={E:.2f}R)")
 
-        # 2. Check Revive
+        # 2. Check Revive — require a sustained positive shadow run (8 trades, >0.25R)
         if strategy in self.suspended_strategies:
             shadow_r = self.strategy_shadow_trades[strategy]
-            if len(shadow_r) >= 5:
-                window_shadow = shadow_r[-5:]
+            if len(shadow_r) >= 8:
+                window_shadow = shadow_r[-8:]
                 shadow_E = sum(window_shadow) / len(window_shadow)
-                if shadow_E > 0.15:
+                if shadow_E > 0.25:
                     self.suspended_strategies.remove(strategy)
                     # Clear history to promote new baseline (as specified in compacted context)
                     self.strategy_real_trades[strategy].clear()
@@ -443,7 +453,7 @@ class BacktestEngine:
                             half_invested = pos.invested * 0.5
                             
                             # Exit half
-                            exit_usd = half_size * pos.tp1_price * 0.995 * (1.0 - 0.0025)
+                            exit_usd = half_size * pos.tp1_price * (1.0 - BT_SLIPPAGE) * (1.0 - BT_FEE)
                             realized_pnl = exit_usd - half_invested
                             realized_pct = (realized_pnl / half_invested) * 100.0
                             
@@ -511,7 +521,21 @@ class BacktestEngine:
                                 exit_triggered = True
                                 exit_reason = "TRAIL_STOP_PROFIT"
                                 exit_price = pos.stop_loss
-                                
+
+                    elif pos.strategy in ("donchian_breakout", "xsect_momentum"):
+                        # Once +2.5% in profit, move stop to breakeven+ and trail 3%
+                        # below the peak so a breakout can run while protecting gains.
+                        if pnl_pct >= 2.5 and not pos.tp1_hit:
+                            pos.tp1_hit = True
+                            pos.stop_loss = max(pos.stop_loss, pos.entry_price * 1.005)
+                        if pos.tp1_hit:
+                            trailing_stop = pos.highest_price * 0.97
+                            pos.stop_loss = max(pos.stop_loss, trailing_stop)
+                            if low <= pos.stop_loss:
+                                exit_triggered = True
+                                exit_reason = "TRAIL_STOP_PROFIT"
+                                exit_price = pos.stop_loss
+
                     # E. Stagnation check
                     if not exit_triggered and hold_min > 45.0 and abs(pnl_pct) < 0.2 and not pos.tp1_hit:
                         exit_triggered = True
@@ -520,7 +544,7 @@ class BacktestEngine:
                         
                     if exit_triggered:
                         # Close position
-                        exit_usd = pos.size * exit_price * 0.995 * (1.0 - 0.0025)
+                        exit_usd = pos.size * exit_price * (1.0 - BT_SLIPPAGE) * (1.0 - BT_FEE)
                         pnl_usd = exit_usd - pos.invested
                         pnl_pct = (pnl_usd / pos.invested) * 100.0 if pos.invested > 0 else 0.0
                         
@@ -609,104 +633,85 @@ class BacktestEngine:
                         # Confluence score has cached it on ctx
                         score = ctx.confluence
                         
-                        # Evaluate strategies
+                        # Evaluate all strategies, then COMBINE the active ones into
+                        # ONE high-conviction ensemble entry (shadow strategies are
+                        # still tracked individually for revival).
+                        fired = []
                         for name in self.enabled_strategies:
-                            # Check regime actionability
+                            # The main engine validates the SPOT book only; the
+                            # leveraged long/short PERP book is validated separately
+                            # by backtest/perp_backtest.py (it needs direction-aware
+                            # fills this spot engine doesn't model).
+                            if "perp" in name:
+                                continue
                             if not is_actionable(ctx.regime, name):
                                 continue
-                                
-                            # If strategy is enabled
-                            strat_instance = STRATEGIES[name]()
-                            sig = await strat_instance.evaluate(sym, candles_5m, candles_1h, ctx)
+                            sig = await STRATEGIES[name]().evaluate(sym, candles_5m, candles_1h, ctx)
                             if sig:
-                                # Council decision simulation: blend market confluence
-                                # with the strategy's own conviction so counter-trend
-                                # setups aren't gated purely on momentum confluence.
-                                synth_score = 0.5 * (score / 100.0) + 0.5 * sig.confidence
-                                min_conf = settings.council_min_final_confidence if self.quality_mode else settings.council_min_final_confidence_relaxed
+                                fired.append((name, sig))
+                        if not fired:
+                            continue
 
-                                is_shadow = name in self.suspended_strategies
-                                
-                                if synth_score >= min_conf:
-                                    # Sizing & Entry
-                                    if is_shadow:
-                                        # Shadow entry
-                                        # Create shadow position
-                                        size_shadow = 1.0 / quote.price
-                                        # stop loss, take profit price
-                                        sl_price = quote.price * (1.0 - sig.stop_loss_pct/100.0)
-                                        tp_price = quote.price * (1.0 + sig.take_profit_pct/100.0)
-                                        
-                                        pos_id = str(uuid.uuid4())
-                                        new_pos = BacktestPosition(
-                                            id=pos_id,
-                                            symbol=sym,
-                                            entry_time_ms=current_ts,
-                                            entry_price=quote.price,
-                                            stop_loss=sl_price,
-                                            take_profit=tp_price,
-                                            size=size_shadow,
-                                            invested=1.0,
-                                            strategy=name,
-                                            max_hold_min=sig.max_hold_min,
-                                            is_shadow=True
-                                        )
-                                        # Custom setup for mean reversion and trend follow atr
-                                        if name == "mean_reversion":
-                                            # tp1 is middle BB
-                                            # middle Bollinger band
-                                            closes = [c.close for c in candles_5m]
-                                            new_pos.tp1_price = sum(closes[-20:]) / 20.0
-                                        elif name == "trend_follow":
-                                            # ATR 14
-                                            from strategies.trend_follow import calculate_atr
-                                            new_pos.atr = calculate_atr(candles_1h, period=14)
-                                            
-                                        self.open_positions.append(new_pos)
-                                    else:
-                                        # Real entry check limits
-                                        if real_position_count >= settings.max_concurrent_positions:
-                                            continue
-                                            
-                                        # Concentration cap check: no symbol > 50% of capital
-                                        symbol_invested = sum(p.invested for p in self.open_positions if p.symbol == sym and not p.is_shadow)
-                                        if symbol_invested >= self.current_equity * 0.5:
-                                            continue
-                                            
-                                        # Sizing
-                                        size_usd = self.calculate_backtest_trade_size(name, self.cash, real_position_count, score)
-                                        if size_usd > 0.0:
-                                            self.cash -= size_usd
-                                            real_entry_price = quote.price * 1.005 # 50bps slippage
-                                            # deduct 0.25% fee
-                                            real_size = (size_usd * (1.0 - 0.0025)) / real_entry_price
-                                            
-                                            sl_price = real_entry_price * (1.0 - sig.stop_loss_pct/100.0)
-                                            tp_price = real_entry_price * (1.0 + sig.take_profit_pct/100.0)
-                                            
-                                            pos_id = str(uuid.uuid4())
-                                            new_pos = BacktestPosition(
-                                                id=pos_id,
-                                                symbol=sym,
-                                                entry_time_ms=current_ts,
-                                                entry_price=real_entry_price,
-                                                stop_loss=sl_price,
-                                                take_profit=tp_price,
-                                                size=real_size,
-                                                invested=size_usd,
-                                                strategy=name,
-                                                max_hold_min=sig.max_hold_min,
-                                                is_shadow=False
-                                            )
-                                            if name == "mean_reversion":
-                                                closes = [c.close for c in candles_5m]
-                                                new_pos.tp1_price = sum(closes[-20:]) / 20.0
-                                            elif name == "trend_follow":
-                                                from strategies.trend_follow import calculate_atr
-                                                new_pos.atr = calculate_atr(candles_1h, period=14)
-                                                
-                                            self.open_positions.append(new_pos)
-                                            real_position_count += 1
+                        min_conf = settings.council_min_final_confidence if self.quality_mode else settings.council_min_final_confidence_relaxed
+                        from strategies.combiner import combine_signals
+                        real_sigs = [s for n, s in fired if n not in self.suspended_strategies]
+                        shadow_sigs = [(n, s) for n, s in fired if n in self.suspended_strategies]
+
+                        entries = []  # (strategy_name, signal, is_shadow, n_agree)
+                        if real_sigs:
+                            combo = combine_signals(real_sigs)[0]
+                            entries.append((combo.strategy_name, combo, False, combo.n_agree))
+                        for n, s in shadow_sigs:
+                            entries.append((n, s, True, 1))
+
+                        for name, sig, is_shadow, n_agree in entries:
+                            synth_score = 0.5 * (score / 100.0) + 0.5 * sig.confidence
+                            if synth_score < min_conf:
+                                continue
+                            if is_shadow:
+                                size_shadow = 1.0 / quote.price
+                                sl_price = quote.price * (1.0 - sig.stop_loss_pct / 100.0)
+                                tp_price = quote.price * (1.0 + sig.take_profit_pct / 100.0)
+                                new_pos = BacktestPosition(
+                                    id=str(uuid.uuid4()), symbol=sym, entry_time_ms=current_ts,
+                                    entry_price=quote.price, stop_loss=sl_price, take_profit=tp_price,
+                                    size=size_shadow, invested=1.0, strategy=name,
+                                    max_hold_min=sig.max_hold_min, is_shadow=True,
+                                )
+                                if name == "mean_reversion":
+                                    closes = [c.close for c in candles_5m]
+                                    new_pos.tp1_price = sum(closes[-20:]) / 20.0
+                                elif name == "trend_follow":
+                                    from strategies.trend_follow import calculate_atr
+                                    new_pos.atr = calculate_atr(candles_1h, period=14)
+                                self.open_positions.append(new_pos)
+                            else:
+                                if real_position_count >= settings.max_concurrent_positions:
+                                    continue
+                                symbol_invested = sum(p.invested for p in self.open_positions if p.symbol == sym and not p.is_shadow)
+                                if symbol_invested >= self.current_equity * 0.5:
+                                    continue
+                                size_usd = self.calculate_backtest_trade_size(name, self.cash, real_position_count, score, n_agree=n_agree)
+                                if size_usd > 0.0:
+                                    self.cash -= size_usd
+                                    real_entry_price = quote.price * (1.0 + BT_SLIPPAGE)
+                                    real_size = (size_usd * (1.0 - BT_FEE)) / real_entry_price
+                                    sl_price = real_entry_price * (1.0 - sig.stop_loss_pct / 100.0)
+                                    tp_price = real_entry_price * (1.0 + sig.take_profit_pct / 100.0)
+                                    new_pos = BacktestPosition(
+                                        id=str(uuid.uuid4()), symbol=sym, entry_time_ms=current_ts,
+                                        entry_price=real_entry_price, stop_loss=sl_price, take_profit=tp_price,
+                                        size=real_size, invested=size_usd, strategy=name,
+                                        max_hold_min=sig.max_hold_min, is_shadow=False,
+                                    )
+                                    if name == "mean_reversion":
+                                        closes = [c.close for c in candles_5m]
+                                        new_pos.tp1_price = sum(closes[-20:]) / 20.0
+                                    elif name == "trend_follow":
+                                        from strategies.trend_follow import calculate_atr
+                                        new_pos.atr = calculate_atr(candles_1h, period=14)
+                                    self.open_positions.append(new_pos)
+                                    real_position_count += 1
 
                 # Update current equity peak
                 self.current_equity = self.get_equity(current_ts, quotes)
@@ -721,7 +726,7 @@ class BacktestEngine:
 
         return self.closed_trades
 
-    def calculate_backtest_trade_size(self, strategy_name: str, available_usdt: float, active_position_count: int, confluence: float) -> float:
+    def calculate_backtest_trade_size(self, strategy_name: str, available_usdt: float, active_position_count: int, confluence: float, n_agree: int = 1) -> float:
         peak = self.peak_equity
         now = self.current_equity
         drawdown_pct = 0.0
@@ -757,8 +762,9 @@ class BacktestEngine:
         else:
             quality_mult = 1.1
             
-        size = self.base_trade_size * 1.0 * dd_mult * strat_mult * learn_mult * council_mult * quality_mult
-        
+        agree_mult = min(1.5, 1.0 + 0.25 * max(0, n_agree - 1))
+        size = self.base_trade_size * 1.0 * dd_mult * strat_mult * learn_mult * council_mult * quality_mult * agree_mult
+
         if size > available_usdt:
             size = available_usdt
             

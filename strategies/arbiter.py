@@ -54,13 +54,13 @@ class StrategyArbiter:
             shadow_trade_stmt = select(Trade).where(Trade.strategy == shadow_strat).where(Trade.status != "open")
             closed_shadows = list(session.exec(shadow_trade_stmt).all())
             
-            if len(closed_shadows) >= 5:
-                # Query last 5 shadow stats
-                shadow_stat_stmt = select(StrategyStat).where(StrategyStat.strategy == shadow_strat).order_by(StrategyStat.closed_at.desc()).limit(5)
+            if len(closed_shadows) >= 8:
+                # Query last 8 shadow stats — require a sustained positive shadow run
+                shadow_stat_stmt = select(StrategyStat).where(StrategyStat.strategy == shadow_strat).order_by(StrategyStat.closed_at.desc()).limit(8)
                 shadow_stats = list(session.exec(shadow_stat_stmt).all())
                 shadow_e = sum(s.r_realized for s in shadow_stats) / len(shadow_stats) if shadow_stats else 0.0
-                
-                if shadow_e > 0.15:
+
+                if shadow_e > 0.25:
                     self.suspended_strategies.discard(strat)
                     revived_this_cycle.add(strat)
                     logger.info(f"[ARBITER] REVIVE strategy '{strat}': shadow expectancy {shadow_e:.2f}R > 0.15R")

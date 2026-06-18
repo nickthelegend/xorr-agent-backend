@@ -10,10 +10,11 @@ are represented by the open Position rows, so a token's simulated balance is jus
 the sum of open position sizes for that contract. This keeps the ledger and the
 position book in agreement and makes the boot reconciler a no-op in sim mode.
 """
-from typing import List
+from typing import List, Optional
 from sqlmodel import Session, select
 from persistence.db import engine
 from persistence.models import RuntimeState, Position
+from config import settings
 
 
 def _get_state(session: Session) -> RuntimeState:
@@ -26,13 +27,16 @@ def _get_state(session: Session) -> RuntimeState:
     return state
 
 
-def ensure_seeded(starting_usdt: float = 100.0, starting_bnb: float = 0.05) -> None:
-    """Seeds the paper ledger once, on first boot in simulation mode."""
+def ensure_seeded(starting_usdt: Optional[float] = None, starting_bnb: Optional[float] = None) -> None:
+    """Seeds the paper ledger once, on first boot in simulation mode. Defaults to
+    the configured sim_start_* so the paper book mirrors the live ~$60 wallet."""
+    usdt = settings.sim_start_usdt if starting_usdt is None else starting_usdt
+    bnb = settings.sim_start_bnb if starting_bnb is None else starting_bnb
     with Session(engine) as session:
         state = _get_state(session)
         if not state.sim_seeded:
-            state.sim_cash_usdt = starting_usdt
-            state.sim_bnb = starting_bnb
+            state.sim_cash_usdt = usdt
+            state.sim_bnb = bnb
             state.sim_seeded = True
             session.add(state)
             session.commit()
@@ -67,25 +71,34 @@ def adjust_bnb(delta: float) -> float:
         return float(state.sim_bnb)
 
 
-def reset(starting_usdt: float = 100.0, starting_bnb: float = 0.05) -> None:
-    """Resets the paper ledger to its starting balances (does not touch positions)."""
+def reset(starting_usdt: Optional[float] = None, starting_bnb: Optional[float] = None) -> None:
+    """Resets the paper ledger to its starting balances (does not touch positions).
+    Defaults to the configured sim_start_* (mirrors the live ~$60 wallet)."""
+    usdt = settings.sim_start_usdt if starting_usdt is None else starting_usdt
+    bnb = settings.sim_start_bnb if starting_bnb is None else starting_bnb
     with Session(engine) as session:
         state = _get_state(session)
-        state.sim_cash_usdt = starting_usdt
-        state.sim_bnb = starting_bnb
+        state.sim_cash_usdt = usdt
+        state.sim_bnb = bnb
         state.sim_seeded = True
         session.add(state)
         session.commit()
 
 
 def get_token_balance(contract: str) -> float:
-    """Simulated balance of a token = sum of open position sizes for that contract."""
+    """Simulated balance of a SPOT token = sum of open spot position sizes for
+    that contract. Perp positions hold no underlying token (only USDT margin),
+    so they are excluded — counting their notional units would wrongly inflate
+    the token balance."""
     if not contract:
         return 0.0
     target = contract.lower()
     with Session(engine) as session:
         positions = session.exec(select(Position)).all()
-        return float(sum(p.size for p in positions if (p.contract or "").lower() == target))
+        return float(sum(
+            p.size for p in positions
+            if (p.contract or "").lower() == target and not getattr(p, "is_perp", False)
+        ))
 
 
 def list_open_positions() -> List[Position]:

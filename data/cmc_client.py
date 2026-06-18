@@ -91,7 +91,30 @@ async def fetch_cmc_quotes() -> Dict[str, Quote]:
     # Fallback to public prices if CMC fails
     return await _fetch_fallback_quotes(symbols)
 
-async def _fetch_fallback_quotes(symbols: List[str]) -> Dict[str, Quote]:
+_fast_cache: Dict[str, Quote] = {}
+_fast_fetch_time = 0.0
+FAST_CACHE_SEC = 8.0
+
+async def fetch_fast_quotes() -> Dict[str, Quote]:
+    """Low-latency marks for the RISK/EXIT tick — one public Binance 24h-ticker
+    call (no key, generous limits), cached ~8s. Decoupled from the 60s CMC cache
+    so the monitor can manage SL/TP/liquidation responsively without burning CMC
+    credits. Falls back to the CMC cache if Binance is unreachable."""
+    global _fast_cache, _fast_fetch_time
+    now = time.time()
+    if _fast_cache and (now - _fast_fetch_time < FAST_CACHE_SEC):
+        return _fast_cache
+    tokens = iter_tradable()
+    symbols = [t.symbol for t in tokens]
+    q = await _fetch_fallback_quotes(symbols, _store_global=False)
+    if q:
+        _fast_cache = q
+        _fast_fetch_time = now
+        return _fast_cache
+    return _fast_cache or _cmc_quotes_cache
+
+
+async def _fetch_fallback_quotes(symbols: List[str], _store_global: bool = True) -> Dict[str, Quote]:
     """Fallback quote fetcher using public Binance endpoints."""
     # We will fetch prices for our top tokens. Since querying 149 individual tickers
     # takes a lot of time, we query the 24h ticker endpoint: https://api.binance.com/api/v3/ticker/24hr
@@ -128,11 +151,13 @@ async def _fetch_fallback_quotes(symbols: List[str]) -> Dict[str, Quote]:
                             last_updated=datetime.now(timezone.utc)
                         )
                 if new_quotes:
-                    _cmc_quotes_cache.update(new_quotes)
-                    global _last_cmc_fetch_time
-                    _last_cmc_fetch_time = time.time()
-                    return _cmc_quotes_cache
+                    if _store_global:
+                        _cmc_quotes_cache.update(new_quotes)
+                        global _last_cmc_fetch_time
+                        _last_cmc_fetch_time = time.time()
+                        return _cmc_quotes_cache
+                    return new_quotes
     except Exception as e:
         print(f"[FALLBACK PRICE ERROR] Failed to fetch fallback tickers from Binance: {e}")
-        
-    return _cmc_quotes_cache
+
+    return _cmc_quotes_cache if _store_global else {}

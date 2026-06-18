@@ -73,12 +73,14 @@ class EngineScheduler:
                 if state.scheduler_state != "HALTED":
                     update_state(session, scheduler_state="IDLE")
 
-            # Wait for next interval or manual trigger
+            # Wait for next interval or manual trigger (scan faster in simulation)
             try:
-                # wait for trigger or timeout (default scan interval)
+                with Session(engine) as session:
+                    is_sim = get_state(session).mode == "simulation"
+                interval = settings.sim_scan_interval_sec if is_sim else settings.scan_interval_sec
                 await asyncio.wait_for(
                     self._scan_trigger_event.wait(),
-                    timeout=float(settings.scan_interval_sec)
+                    timeout=float(interval)
                 )
                 # If we were triggered, clear the event
                 self._scan_trigger_event.clear()
@@ -121,9 +123,9 @@ class EngineScheduler:
                 if state.scheduler_state == "MONITORING":
                     update_state(session, scheduler_state="IDLE")
 
-            # Poll cadence: 60s
+            # Fast risk/exit poll cadence (configurable; default 15s)
             try:
-                await asyncio.sleep(60.0)
+                await asyncio.sleep(float(settings.monitor_interval_sec))
             except asyncio.CancelledError:
                 break
 

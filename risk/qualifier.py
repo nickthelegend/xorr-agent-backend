@@ -86,6 +86,8 @@ async def execute_qualifier_trade(session: Session, executor: TwakExecutor):
         pnl_usd=0.0,
         pnl_pct=0.0,
         hold_minutes=0.0,
+        entry_price=buy_res.executed_price,
+        exit_price=None,
         entry_mc=0.0,
         exit_mc=0.0,
         score=99.0,
@@ -130,6 +132,7 @@ async def execute_qualifier_trade(session: Session, executor: TwakExecutor):
         trade.hold_minutes = round(hold_min, 2)
         trade.exit_reason = "MAX_HOLD_TIME" if sell_res.success else "STAGNATION_EXIT"
         trade.tx_close = sell_res.tx_hash
+        trade.exit_price = sell_res.executed_price if sell_res.success else None
         session.add(trade)
         session.commit()
         print(f"[QUALIFIER] Routine completed. Status={status}, PnL=${pnl:.4f}, Tx={sell_res.tx_hash}")

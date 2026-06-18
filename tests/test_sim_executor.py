@@ -9,7 +9,7 @@ from decimal import Decimal
 from config import settings
 from persistence.db import init_db
 from core import sim_ledger
-from core.twak_executor import TwakExecutor, SIM_SWAP_FEE
+from core.twak_executor import TwakExecutor, SIM_SWAP_FEE, SIM_REALIZED_SLIPPAGE
 
 USDT = settings.usdt_contract
 TOKEN = "0x000000000000000000000000000000000000dEaD"  # arbitrary non-USDT contract
@@ -24,7 +24,7 @@ def _db():
 @pytest.mark.anyio
 async def test_buy_fills_at_real_price_and_debits_cash():
     ex = TwakExecutor(settings, simulation=True)
-    cost = SIM_SWAP_FEE + settings.slippage_bps_spot / 10000.0
+    cost = SIM_SWAP_FEE + SIM_REALIZED_SLIPPAGE
 
     res = await ex.swap(USDT, TOKEN, Decimal("10"), Decimal("0"), "ENTRY_test", ref_price=2.0)
 
@@ -40,7 +40,7 @@ async def test_buy_fills_at_real_price_and_debits_cash():
 @pytest.mark.anyio
 async def test_round_trip_profit_when_price_rises():
     ex = TwakExecutor(settings, simulation=True)
-    cost = SIM_SWAP_FEE + settings.slippage_bps_spot / 10000.0
+    cost = SIM_SWAP_FEE + SIM_REALIZED_SLIPPAGE
 
     buy = await ex.swap(USDT, TOKEN, Decimal("10"), Decimal("0"), "ENTRY_test", ref_price=2.0)
     sell = await ex.swap(TOKEN, USDT, Decimal(str(buy.amount_out)), Decimal("0"), "EXIT_test", ref_price=2.2)

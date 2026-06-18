@@ -13,6 +13,8 @@ class Trade(SQLModel, table=True):
     pnl_usd: float = 0.0
     pnl_pct: float = 0.0
     hold_minutes: float = 0.0
+    entry_price: Optional[float] = None
+    exit_price: Optional[float] = None
     entry_mc: Optional[float] = None
     exit_mc: Optional[float] = None
     score: float = 0.0
@@ -21,6 +23,9 @@ class Trade(SQLModel, table=True):
     tx_open: str
     tx_close: Optional[str] = None
     strategy: str
+    direction: str = "long"   # "long" | "short"
+    venue: str = "spot"       # "spot" | "perp"
+    leverage: float = 1.0
 
 class Position(SQLModel, table=True):
     id: str = Field(default=None, primary_key=True)  # transaction open hash
@@ -30,11 +35,18 @@ class Position(SQLModel, table=True):
     entry_price: float
     stop_loss: float
     take_profit: float
-    size: float  # size in token units
+    size: float  # token units (spot: held tokens; perp: notional units = margin*lev/entry)
     strategy: str
-    invested: float  # USDT amount invested
+    invested: float  # USDT at risk (spot: cost; perp: margin posted)
     mode: str = "simulation"  # "simulation" | "live"
     tp1_hit: bool = False
+    # --- Perpetual-futures fields (is_perp=False => plain spot long) ---
+    is_perp: bool = False
+    venue: str = "spot"            # "spot" | "perp"
+    direction: str = "long"        # "long" | "short"
+    leverage: float = 1.0
+    margin_usd: float = 0.0        # collateral posted (mirrors `invested` for perps)
+    liquidation_price: float = 0.0
 
 class EquityPoint(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -61,6 +73,8 @@ class RuntimeState(SQLModel, table=True):
     # --- Live competition registration ---
     registered: bool = False       # agent wallet registered on-chain for the competition
     registered_tx: Optional[str] = None
+    # --- Risk: soft de-risk pause (set by the kill switch's recoverable tier) ---
+    risk_paused_until: float = 0.0  # epoch seconds; while now < this, no NEW entries
 
 class CooldownEntry(SQLModel, table=True):
     symbol: str = Field(primary_key=True)

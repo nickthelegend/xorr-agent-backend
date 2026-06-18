@@ -82,8 +82,8 @@ def test_arbiter_suspend_and_revive(db_session, mock_signals):
     arbiter.update_suspended_states(db_session)
     assert "momentum_pullback" in arbiter.suspended_strategies
     
-    # 2. Simulate 5 completed shadow winning trades (expectancy > 0.15R)
-    for i in range(5):
+    # 2. Simulate 8 completed shadow winning trades (sustained expectancy > 0.25R)
+    for i in range(8):
         db_session.add(Trade(
             id=f"ts_{i}",
             opened_at=datetime.now(timezone.utc).isoformat(),
@@ -114,18 +114,16 @@ def test_arbiter_suspend_and_revive(db_session, mock_signals):
     assert "momentum_pullback" not in arbiter.suspended_strategies
 
 def test_arbiter_diversity_floor(db_session):
+    from strategies.registry import STRATEGIES
     arbiter = StrategyArbiter()
-    
-    # Suspend 5 strategies
-    arbiter.suspended_strategies = {
-        "momentum_pullback",
-        "fib_golden_pocket",
-        "capitulation",
-        "news_catalyst",
-        "mean_reversion"
-    }
-    
-    # Attempting to suspend "trend_follow" (making it 6 suspended, leaving only 2 active)
+
+    # Suspend everything except trend_follow + 2 others, so exactly 3 remain
+    # active (right at the diversity floor). Robust to new strategies being added.
+    others = [s for s in STRATEGIES.keys() if s != "trend_follow"]
+    keep_active = {"trend_follow", others[0], others[1]}
+    arbiter.suspended_strategies = set(STRATEGIES.keys()) - keep_active
+
+    # Attempting to suspend "trend_follow" would drop active below the floor of 3
     # 11 losing trades
     for i in range(11):
         db_session.add(StrategyStat(
