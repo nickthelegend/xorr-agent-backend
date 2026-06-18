@@ -9,6 +9,17 @@ This agent is a **regime-adaptive long/short** system:
 
 ---
 
+## Two ways to go live (important)
+The agent has **two** independent on-chain execution paths:
+1. **Spot via web3 keystore — needs ONLY a funded wallet, no TWAK creds.** The agent
+   signs real PancakeSwap V2 swaps locally. Fund the wallet → switch to LIVE → it
+   trades the spot book on-chain. (Verified: BSC connects, real PancakeSwap quotes work.)
+2. **Perps via TWAK CLI — needs TWAK creds too.** The long/short perp book (and the
+   special prize) require `TWAK_ACCESS_ID`/`HMAC` from `twak setup`.
+
+The **Wallet page → GO-LIVE READINESS** panel (and `GET /api/readiness`) shows a live
+checklist of exactly what's done and what's missing for each path. Use it.
+
 ## 0. One-time machine setup (do this before June 21)
 
 ```bash

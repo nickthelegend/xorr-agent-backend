@@ -250,6 +250,13 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
     #     candidate gates (whale-flow / confluence) so a breakdown SHORT in a falling
     #     tape is actually seen. CEX-sanity + cooldown still apply.
     shadow_perp = [n for n in shadow_test_names(settings, [s.name for s in enabled_strats]) if "perp" in n]
+    # Perps can only EXECUTE in sim (paper) or live-with-TWAK. If we're live without
+    # TWAK creds, skip generating real perp signals (they'd fail at open_perp) — the
+    # spot book still trades on-chain via the web3 keystore. Shadow perps are paper,
+    # so they keep running regardless.
+    perps_live_ok = executor.simulation or executor._twak_ready()
+    if not perps_live_ok:
+        perp_strats = []
     if settings.enable_perps and (perp_strats or shadow_perp):
         existing_shadow = {(p.strategy, p.symbol.upper()) for p in open_pos if getattr(p, "is_shadow", False)}
         n_shadow = sum(1 for p in open_pos if getattr(p, "is_shadow", False))

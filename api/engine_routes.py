@@ -154,6 +154,13 @@ async def stop_engine(session: Session = Depends(get_session)):
     return {"success": False, "error": "Scheduler not initialized"}
 
 
+@router.get("/readiness")
+async def readiness():
+    """Go-live readiness checklist + capability summary (can we trade spot/perps live?)."""
+    from core.readiness import check_readiness
+    return check_readiness()
+
+
 @router.get("/health")
 async def health():
     """Liveness/readiness probe for an external uptime monitor (UptimeRobot, etc.).
