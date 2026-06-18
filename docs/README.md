@@ -19,6 +19,8 @@ and an out-of-sample robustness gauntlet).
 5. [05 — Risk & Execution](05-risk-and-execution.md) — perps, liquidation, the DQ-proof kill switch, TWAK.
 6. [06 — Data & Feeds](06-data-feeds.md) — CMC skills, websocket price feed, the liquidation tape.
 7. [07 — The Journey](07-the-journey.md) — chronological record of everything that was asked and built.
+8. [08 — Performance Strategies](08-performance-strategies.md) — the 5 strategies that hit 500%+ / <25% DD + their OOS check.
+9. [09 — Verification](09-verification.md) ✅ — proof the sim, all layers, and the live path are tested and working.
 
 Also at the repo root: [`COMPETITION_RUNBOOK.md`](../COMPETITION_RUNBOOK.md) (go-live steps) and [`ROBUSTNESS.md`](../ROBUSTNESS.md) (the ranked survival table).
 

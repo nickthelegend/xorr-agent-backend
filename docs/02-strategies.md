@@ -34,6 +34,15 @@ backtest + the robustness gauntlet, not by hand:
 | `liq_reversion` | fade liquidation imbalance (the original A4) | +0.151 |
 | `volume_confirmed_reversion` | fade a flush with a 2× volume confirm | +0.142 |
 
+### Perp book — the 5 PERFORMANCE strategies (500%+/<25%DD compounded; see [08](08-performance-strategies.md))
+| Strategy | Idea (percentile flush + …) | Backtest |
+|---|---|---|
+| `liq_rsi_stack` | Stochastic %K extreme | +1360% / Sharpe 2.77 |
+| `liq_mtf_reversion` | higher-TF RSI exhaustion | +1014% / 2.38 |
+| `liq_double_extreme` | extreme volume percentile | +708% / 2.50 |
+| `liq_vwap_reversion` | VWAP deviation | +575% / 2.25 |
+| `liq_range_extreme` | EMA20 deviation | +529% / 2.26 |
+
 ## SHADOW (paper-traded live; auto-promote if proven)
 Momentum / continuation and marginal ideas that the 1h proxy gauntlet didn't pass
 but which may work on the **real liquidation tape**:
