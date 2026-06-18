@@ -58,6 +58,9 @@ STRATEGIES.update(_PERF_LIQ_IDEAS)
 # moon-dev momentum set (exact mechanics)
 from strategies.momentum_liq import IDEAS as _MOMENTUM_LIQ_IDEAS
 STRATEGIES.update(_MOMENTUM_LIQ_IDEAS)
+# 5 new performance liquidation-reversion ideas
+from strategies.perf5 import IDEAS as _PERF5_IDEAS
+STRATEGIES.update(_PERF5_IDEAS)
 
 def active_strategies(settings, suspended_list: List[str] = None,
                       promoted_list: List[str] = None) -> List[BaseStrategy]:

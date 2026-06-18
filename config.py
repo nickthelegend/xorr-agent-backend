@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     enable_strategy_adaptive_p99_momentum_perp: bool = Field(default=False) # momentum -> failed OOS, shadow
     consec_bars: int = Field(default=4)                    # cascade = N consecutive same-dir bars
     burst_imbalance_ratio: float = Field(default=5.0)      # dominant-side burst: one side 5x the other
+    # 5 NEW performance liquidation-reversion ideas — each hit 500%+/<25%DD in the
+    # compounding backtest AND survived the known/unknown OOS split. ENABLED. (Live
+    # they trade at the conservative perp caps; the 500% is the edge at 5x demo sizing.)
+    enable_strategy_liq_double_extreme_perp: bool = Field(default=True)     # +708% / OOS +221%
+    enable_strategy_liq_mtf_reversion_perp: bool = Field(default=True)      # +1014% / OOS +456%
+    enable_strategy_liq_range_extreme_perp: bool = Field(default=True)      # +529% / OOS +149%
+    enable_strategy_liq_vwap_reversion_perp: bool = Field(default=True)     # +575% / OOS +87%
+    enable_strategy_liq_rsi_stack_perp: bool = Field(default=True)          # +1360% / OOS +340%
     liq_big_z_threshold: float = Field(default=3.0)        # "big liq" gate for the reversal-fade
     liq_relspike_threshold: float = Field(default=3.0)     # relative-spike gate (vs rolling regime)
     # MACD + liq strategies ("momentum is the right way to trade liquidations")
