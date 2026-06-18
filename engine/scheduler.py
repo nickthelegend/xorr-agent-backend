@@ -15,8 +15,11 @@ class EngineScheduler:
         self._running = False
         self._scan_task = None
         self._monitor_task = None
+        self._watchdog_task = None
         self._executor = None
         self._scan_trigger_event = asyncio.Event()
+        self._scan_heartbeat = 0.0
+        self._monitor_heartbeat = 0.0
 
     def start(self):
         """Starts the background engine loops if they are not running."""
@@ -24,24 +27,62 @@ class EngineScheduler:
             return
         self._running = True
         self._scan_trigger_event.clear()
-        
+
         # Start loops
         self._scan_task = asyncio.create_task(self._scan_loop())
         self._monitor_task = asyncio.create_task(self._monitor_loop())
-        
-        print("[SCHEDULER] Engine scheduler started background tasks.")
+        if self._watchdog_task is None or self._watchdog_task.done():
+            self._watchdog_task = asyncio.create_task(self._watchdog_loop())
+
+        print("[SCHEDULER] Engine scheduler started background tasks + watchdog.")
 
     def stop(self):
         """Pauses the scheduler scanning loops; open positions are still monitored."""
         self._running = False
         self._scan_trigger_event.set()  # release any waiting scans
-        
+
         # Cancel scanning task
         if self._scan_task:
             self._scan_task.cancel()
             self._scan_task = None
-            
+
         print("[SCHEDULER] Engine scheduler paused scanning. Monitoring is kept active.")
+
+    def health(self) -> dict:
+        """Liveness snapshot for a /health endpoint or external supervisor."""
+        now = time.monotonic()
+        return {
+            "running": self._running,
+            "scan_alive": bool(self._scan_task and not self._scan_task.done()),
+            "monitor_alive": bool(self._monitor_task and not self._monitor_task.done()),
+            "scan_age_sec": round(now - self._scan_heartbeat, 1) if self._scan_heartbeat else None,
+            "monitor_age_sec": round(now - self._monitor_heartbeat, 1) if self._monitor_heartbeat else None,
+        }
+
+    async def _watchdog_loop(self):
+        """Self-heal: if the scan or monitor loop task dies on an unhandled error,
+        log it and respawn it. Keeps the agent alive unattended through the
+        competition week (a dead loop = missed daily trades = 0 for those hours)."""
+        while True:
+            try:
+                await asyncio.sleep(30.0)
+            except asyncio.CancelledError:
+                break
+            # Restart the scan loop if it died while we should be running.
+            if self._running and self._scan_task is not None and self._scan_task.done():
+                exc = None
+                if not self._scan_task.cancelled():
+                    exc = self._scan_task.exception()
+                if exc is not None or not self._scan_task.cancelled():
+                    print(f"[WATCHDOG] scan loop ended unexpectedly (exc={exc}); restarting.")
+                    self._scan_task = asyncio.create_task(self._scan_loop())
+            # The monitor loop runs whenever not HALTED; restart if it died.
+            if self._monitor_task is not None and self._monitor_task.done():
+                exc = None
+                if not self._monitor_task.cancelled():
+                    exc = self._monitor_task.exception()
+                print(f"[WATCHDOG] monitor loop ended unexpectedly (exc={exc}); restarting.")
+                self._monitor_task = asyncio.create_task(self._monitor_loop())
 
     def trigger_scan(self):
         """Triggers an immediate scan execution."""
@@ -50,6 +91,7 @@ class EngineScheduler:
     async def _scan_loop(self):
         """Loop that runs pipeline scans at standard intervals."""
         while self._running:
+            self._scan_heartbeat = time.monotonic()
             # Check state in database
             with Session(engine) as session:
                 state = get_state(session)
@@ -92,8 +134,9 @@ class EngineScheduler:
                 break
 
     async def _monitor_loop(self):
-        """Independent loop that polls active positions every 60 seconds."""
+        """Independent loop that polls active positions at the fast risk cadence."""
         while True:
+            self._monitor_heartbeat = time.monotonic()
             # We monitor positions even if scanning is stopped, but not if HALTED
             with Session(engine) as session:
                 state = get_state(session)

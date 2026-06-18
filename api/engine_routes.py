@@ -152,3 +152,23 @@ async def stop_engine(session: Session = Depends(get_session)):
         # Note: Open positions are still monitored in stop mode, but scheduler scans are paused.
         return {"success": True, "state": "IDLE"}
     return {"success": False, "error": "Scheduler not initialized"}
+
+
+@router.get("/health")
+async def health():
+    """Liveness/readiness probe for an external uptime monitor (UptimeRobot, etc.).
+    Reports scheduler loop liveness + heartbeat ages and DB sanity, so a dead
+    process or stalled loop during the live week is detectable from outside."""
+    from engine.scheduler import scheduler
+    h = scheduler.health() if scheduler else {"running": False}
+    db_ok = True
+    try:
+        from persistence.db import engine as db_engine
+        from sqlmodel import Session as _S
+        with _S(db_engine) as s:
+            get_state(s)
+    except Exception:
+        db_ok = False
+    # Healthy = DB reachable AND (monitor loop alive OR engine intentionally stopped)
+    ok = db_ok and (h.get("monitor_alive", False) or not h.get("running", False))
+    return {"ok": ok, "db": db_ok, "scheduler": h, "t": datetime.now(timezone.utc).isoformat()}

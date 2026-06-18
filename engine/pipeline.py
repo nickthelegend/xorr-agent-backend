@@ -232,7 +232,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
     for token, quote in candidates:
         symbol = token.symbol
         candles_5m = await fetch_binance_klines(symbol, "5m", limit=35)
-        candles_1h = await fetch_binance_klines(symbol, "1h", limit=60)
+        candles_1h = await fetch_binance_klines(symbol, "1h", limit=80)
         for strat in spot_strats:
             if not is_actionable(ctx.regime, strat.name):
                 continue
@@ -256,7 +256,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
             if not await passes_cex_sanity(symbol, quote.price):
                 continue
             candles_5m = await fetch_binance_klines(symbol, "5m", limit=35)
-            candles_1h = await fetch_binance_klines(symbol, "1h", limit=60)
+            candles_1h = await fetch_binance_klines(symbol, "1h", limit=80)
             for strat in perp_strats:
                 try:
                     sig = await strat.evaluate(symbol, candles_5m, candles_1h, ctx)

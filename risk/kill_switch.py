@@ -49,11 +49,12 @@ async def _flatten_all_positions(session: Session, executor: TwakExecutor):
         print(f"[KILL SWITCH] Closing {pos.symbol} {getattr(pos,'direction','long')} (${pos.invested:.2f})")
         try:
             if getattr(pos, "is_perp", False):
+                _hold_h = max(0.0, (datetime.now(timezone.utc).timestamp() - pos.opened_at) / 3600.0)
                 res = await executor.close_perp(
                     symbol=pos.symbol, direction=getattr(pos, "direction", "long"),
                     size_units=pos.size, entry_price=pos.entry_price,
                     margin_usd=pos.invested, leverage=getattr(pos, "leverage", 1.0),
-                    ref_price=kill_price,
+                    ref_price=kill_price, hold_hours=_hold_h,
                 )
             else:
                 res = await executor.swap(

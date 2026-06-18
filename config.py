@@ -89,6 +89,17 @@ class Settings(BaseSettings):
     supertrend_mult: float = Field(default=3.0)
     salamander_pullback_min: float = Field(default=3.0)
     salamander_pullback_max: float = Field(default=7.0)
+    donchian_channel_bars: int = Field(default=55)          # trustdan-validated: 55-bar >> 20-bar (+5.1% vs +2.4%)
+    enable_strategy_volsqueeze_perp: bool = Field(default=False)
+    enable_strategy_rsi_div_perp: bool = Field(default=False)
+    # geektrade vol-squeeze (BB inside KC + volume), exact published params
+    volsq_len: int = Field(default=20)
+    volsq_bb_mult: float = Field(default=2.0)
+    volsq_kc_mult: float = Field(default=1.5)
+    volsq_vol_spike: float = Field(default=1.8)
+    volsq_sl_atr: float = Field(default=2.0)
+    volsq_tp_atr: float = Field(default=3.5)
+    rsi_div_lookback: int = Field(default=20)
 
     # --- Perpetual futures (BSC perps via TWAK -> Aster/Hyperliquid) ---
     enable_perps: bool = Field(default=True)                 # master switch for the perp book
@@ -105,6 +116,7 @@ class Settings(BaseSettings):
     perp_margin_pct_per_trade: float = Field(default=0.12)  # max margin per perp = 12% of equity
     perp_total_margin_pct: float = Field(default=0.30)      # max TOTAL perp margin = 30% of equity
     perp_min_margin_usd: float = Field(default=5.0)         # venue min order floor
+    perp_funding_rate_8h: float = Field(default=0.0001)     # funding carry modeled per 8h on notional (sim/backtest realism)
 
     # --- Drawdown disqualification gate (competition rule ~30%) ---
     dq_drawdown_pct: float = Field(default=30.0)            # blow past this = DISQUALIFIED

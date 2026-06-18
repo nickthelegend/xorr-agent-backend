@@ -71,7 +71,8 @@ class DonchianPerpStrategy(BaseStrategy):
     async def evaluate(self, symbol, candles_5m, candles_1h, market_ctx: MarketContext) -> Optional[Signal]:
         if symbol.upper() not in self._perp_symbols():
             return None
-        if len(candles_1h) < 25:
+        n_chan = int(getattr(settings, "donchian_channel_bars", 20))
+        if len(candles_1h) < n_chan + 5:
             return None
 
         leverage = float(getattr(settings, "perp_leverage", 3.0))
@@ -95,13 +96,13 @@ class DonchianPerpStrategy(BaseStrategy):
         prev = closes[-2]
         ema_50 = _ema(closes, 50) if len(closes) >= 50 else _ema(closes, 20)
 
-        avg_vol = sum(vols[-21:-1]) / 20.0
+        avg_vol = sum(vols[-(n_chan + 1):-1]) / n_chan
         vol_ok = avg_vol > 0 and vols[-1] >= 1.3 * avg_vol
         if not vol_ok:
             return None
 
-        channel_high = max(highs[-21:-1])
-        channel_low = min(lows[-21:-1])
+        channel_high = max(highs[-(n_chan + 1):-1])
+        channel_low = min(lows[-(n_chan + 1):-1])
         vol_mult = vols[-1] / avg_vol if avg_vol > 0 else 0.0
 
         # LONG breakout: fresh close above the channel, in an uptrend, not over-extended

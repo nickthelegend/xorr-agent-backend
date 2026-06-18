@@ -180,7 +180,7 @@ async def monitor_tick(session: Session, executor: TwakExecutor):
                 res = await executor.close_perp(
                     symbol=symbol, direction=direction, size_units=pos.size,
                     entry_price=entry_price, margin_usd=pos.invested,
-                    leverage=leverage, ref_price=mark,
+                    leverage=leverage, ref_price=mark, hold_hours=hold_min / 60.0,
                 )
             else:
                 res = await executor.swap(

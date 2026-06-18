@@ -13,6 +13,8 @@ from strategies.donchian_breakout import DonchianBreakoutStrategy
 from strategies.donchian_perp import DonchianPerpStrategy
 from strategies.salamander_perp import SalamanderPerpStrategy
 from strategies.supertrend_perp import SupertrendPerpStrategy
+from strategies.volsqueeze_perp import VolSqueezePerpStrategy
+from strategies.rsi_div_perp import RsiDivPerpStrategy
 from strategies.rsi_reversion import RsiReversionStrategy
 from strategies.cross_sectional_momentum import CrossSectionalMomentumStrategy
 
@@ -29,6 +31,8 @@ STRATEGIES = {
     "donchian_perp": DonchianPerpStrategy,
     "salamander_perp": SalamanderPerpStrategy,
     "supertrend_perp": SupertrendPerpStrategy,
+    "volsqueeze_perp": VolSqueezePerpStrategy,
+    "rsi_div_perp": RsiDivPerpStrategy,
     "rsi_reversion": RsiReversionStrategy,
     "xsect_momentum": CrossSectionalMomentumStrategy,
 }
@@ -68,6 +72,10 @@ def active_strategies(settings, suspended_list: List[str] = None) -> List[BaseSt
         active.append(SalamanderPerpStrategy())
     if getattr(settings, "enable_strategy_supertrend_perp", False) and "supertrend_perp" not in suspended_list:
         active.append(SupertrendPerpStrategy())
+    if getattr(settings, "enable_strategy_volsqueeze_perp", False) and "volsqueeze_perp" not in suspended_list:
+        active.append(VolSqueezePerpStrategy())
+    if getattr(settings, "enable_strategy_rsi_div_perp", False) and "rsi_div_perp" not in suspended_list:
+        active.append(RsiDivPerpStrategy())
     if settings.enable_strategy_rsi_reversion and "rsi_reversion" not in suspended_list:
         active.append(RsiReversionStrategy())
     if settings.enable_strategy_xsect_momentum and "xsect_momentum" not in suspended_list:

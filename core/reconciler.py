@@ -21,9 +21,38 @@ async def reconcile_on_boot(session: Session, wallet_mgr: WalletManager):
     
     reconciled_count = 0
     now_dt = datetime.now(timezone.utc)
-    
+
+    # On-chain perp positions (live only). None => unverifiable: never touch a
+    # local perp on uncertain data (fail-safe).
+    onchain_perp_syms = None
+    try:
+        perp_list = await executor.list_perp_positions()
+        if perp_list is not None:
+            onchain_perp_syms = {str(p.get("symbol") or p.get("asset") or "").upper() for p in perp_list}
+    except Exception as e:
+        print(f"[RECONCILER] perp position read failed: {e}")
+        onchain_perp_syms = None
+
     for pos in positions:
-        # Fetch current on-chain balance of this token
+        # --- PERP reconciliation: by the on-chain perp list, NOT token balance
+        #     (a perp holds no underlying token, so the spot check below would
+        #     falsely flag every perp as a manual sale). ---
+        if getattr(pos, "is_perp", False):
+            if executor.simulation or onchain_perp_syms is None:
+                continue  # sim = local authoritative; live-unverifiable = leave it
+            if pos.symbol.upper() not in onchain_perp_syms:
+                await log_engine_msg(session, "warn", f"[RECONCILER] Perp {pos.symbol} {getattr(pos,'direction','long')} not found on-chain (closed/liquidated externally). Closing local record.")
+                trade = session.get(Trade, pos.id)
+                if trade:
+                    trade.status = "loss"
+                    trade.closed_at = now_dt.isoformat()
+                    trade.exit_reason = "RECONCILE_CLOSED"
+                    session.add(trade)
+                remove_position(session, pos.id)
+                reconciled_count += 1
+            continue
+
+        # Fetch current on-chain balance of this token (SPOT)
         real_balance = 0.0
         try:
             if executor.simulation:

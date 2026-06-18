@@ -495,10 +495,11 @@ class TwakExecutor:
 
     async def close_perp(self, symbol: str, direction: str, size_units: float,
                          entry_price: float, margin_usd: float, leverage: float,
-                         ref_price: Optional[float] = None) -> ExecutionResult:
+                         ref_price: Optional[float] = None, hold_hours: float = 0.0) -> ExecutionResult:
         """Closes a perp. amount_out = USDT credited back (margin + realized PnL
-        - fees), so the caller computes realized PnL as amount_out - margin, the
-        same convention as a spot sell."""
+        - fees - funding carry), so the caller computes realized PnL as
+        amount_out - margin, the same convention as a spot sell. hold_hours drives
+        the funding carry (perps charge funding ~every 8h; long holds bleed it)."""
         direction = "short" if str(direction).lower() == "short" else "long"
 
         if self.simulation:
@@ -510,7 +511,11 @@ class TwakExecutor:
                                        error="No reference price for simulated perp close")
             upnl = perp_math.unrealized_pnl(direction, size_units, entry_price, price)
             fee = (size_units * price) * SIM_PERP_TAKER_FEE
-            proceeds = max(0.0, float(margin_usd) + upnl - fee)
+            # Funding carry over the hold (conservative: a small always-cost so sim
+            # doesn't over-reward multi-hour/day perp holds).
+            funding_rate = float(getattr(self.settings, "perp_funding_rate_8h", 0.0001))
+            funding = (size_units * price) * funding_rate * (max(0.0, hold_hours) / 8.0)
+            proceeds = max(0.0, float(margin_usd) + upnl - fee - funding)
             sim_ledger.adjust_cash(proceeds)
             tx_id = f"SIMPERP:close:{uuid.uuid4()}"
             return ExecutionResult(success=True, tx_hash=tx_id, executed_price=price,
@@ -556,6 +561,22 @@ class TwakExecutor:
             raw = data.get("markPrice") or data.get("mark") or data.get("price")
             px = float(raw)
             return px if px > 0 else None
+        except Exception:
+            return None
+
+    async def list_perp_positions(self) -> Optional[List[Dict[str, Any]]]:
+        """On-chain open perp positions for boot reconciliation. Returns a list of
+        dicts (one per open perp), or None when UNVERIFIABLE (sim mode, no CLI, or
+        the twak build lacks the surface) — callers must treat None as "don't
+        touch" (fail-safe: never close a local perp on uncertain data)."""
+        if self.simulation or not self._twak_ready():
+            return None
+        try:
+            data = await self._run_twak(["perps", "positions", "--chain", "bsc"], timeout=30)
+            if not isinstance(data, dict) or data.get("error"):
+                return None
+            positions = data.get("positions") or data.get("data") or []
+            return positions if isinstance(positions, list) else None
         except Exception:
             return None
 

@@ -25,6 +25,8 @@ from core.types import Candle, MarketContext
 from strategies.donchian_perp import DonchianPerpStrategy
 from strategies.supertrend_perp import SupertrendPerpStrategy
 from strategies.salamander_perp import SalamanderPerpStrategy
+from strategies.volsqueeze_perp import VolSqueezePerpStrategy
+from strategies.rsi_div_perp import RsiDivPerpStrategy
 from backtest.data_loader import get_klines_for_backtest
 from config import settings
 
@@ -32,6 +34,8 @@ STRATS = {
     "donchian_perp": DonchianPerpStrategy,
     "supertrend_perp": SupertrendPerpStrategy,
     "salamander_perp": SalamanderPerpStrategy,
+    "volsqueeze_perp": VolSqueezePerpStrategy,
+    "rsi_div_perp": RsiDivPerpStrategy,
 }
 
 PERP_FEE = 0.0006          # taker fee per side on notional
@@ -193,10 +197,11 @@ async def run(days: int, leverage: float, strat_name: str = "donchian_perp"):
                 if exit_px is None:
                     still.append(p); continue
 
-                # realize
+                # realize (incl. funding carry over the hold; bars == hours)
                 gross = p.size * (exit_px - p.entry) * (1 if p.direction == "long" else -1)
                 fee = (p.size * p.entry + p.size * exit_px) * PERP_FEE
-                pnl = gross - fee
+                funding = (p.size * exit_px) * settings.perp_funding_rate_8h * (hold / 8.0)
+                pnl = gross - fee - funding
                 mode.cash += p.margin + pnl
                 risk = p.size * abs(p.entry - p.init_stop)
                 r = pnl / risk if risk > 0 else 0.0
@@ -210,7 +215,7 @@ async def run(days: int, leverage: float, strat_name: str = "donchian_perp"):
                     continue
                 if len(mode.open) >= MAX_CONCURRENT:
                     break
-                hist = candles[max(0, i - 60):i + 1]
+                hist = candles[max(0, i - 80):i + 1]
                 sig = await strat.evaluate(sym, [], hist, ctx_for(regime, None))
                 if not sig:
                     continue
