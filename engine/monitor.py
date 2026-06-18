@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from sqlmodel import Session
 from config import settings
-from persistence.models import Position, Trade
+from persistence.models import Position, Trade, StrategyStat
 from persistence.repo import get_positions, remove_position, add_trade
 from core.twak_executor import TwakExecutor
 from core import perp_math
@@ -43,6 +43,48 @@ def _tp_hit(direction: str, mark: float, tp: float) -> bool:
     if direction == "short":
         return mark <= tp
     return mark >= tp
+
+
+def _r_multiple(pos, exit_price: float) -> float:
+    """Realized R = price move / initial-stop distance (direction-aware, leverage
+    cancels). Uses the NEVER-trailed init_stop so the R reflects the real risk taken."""
+    entry = pos.entry_price
+    init_stop = getattr(pos, "init_stop", 0.0) or pos.stop_loss
+    if entry <= 0 or init_stop <= 0 or exit_price <= 0:
+        return 0.0
+    stop_frac = abs(entry - init_stop) / entry
+    if stop_frac <= 0:
+        return 0.0
+    sign = -1.0 if getattr(pos, "direction", "long") == "short" else 1.0
+    move_frac = (exit_price - entry) / entry * sign
+    return move_frac / stop_frac
+
+
+def _record_close(session, pos, now_dt, exit_price, pnl_usd, pnl_pct, hold_min, reason, r_mult, tx, window=None):
+    """Update/create the Trade row and ALWAYS write a StrategyStat (the rolling-R
+    series the arbiter uses to suspend/revive/promote — real AND shadow)."""
+    status = "win" if pnl_usd > 0 else "loss"
+    trade = session.get(Trade, pos.id)
+    if trade is None:
+        trade = Trade(id=pos.id, opened_at=datetime.fromtimestamp(pos.opened_at, timezone.utc).isoformat(),
+                      symbol=pos.symbol, contract=pos.contract, status=status,
+                      invested=pos.invested, window=window or "COMPETITION", tx_open=pos.id,
+                      strategy=pos.strategy, direction=getattr(pos, "direction", "long"),
+                      venue=getattr(pos, "venue", "spot"), leverage=getattr(pos, "leverage", 1.0))
+    trade.status = status
+    trade.closed_at = now_dt.isoformat()
+    trade.pnl_usd = round(pnl_usd, 4)
+    trade.pnl_pct = round(pnl_pct, 2)
+    trade.hold_minutes = round(hold_min, 1)
+    trade.exit_reason = reason
+    trade.tx_close = tx
+    trade.exit_price = exit_price
+    if window:
+        trade.window = window
+    session.add(trade)
+    session.add(StrategyStat(strategy=pos.strategy, trade_id=pos.id, closed_at=now_dt,
+                             r_realized=round(r_mult, 3), pnl_usd=round(pnl_usd, 4)))
+    session.commit()
 
 
 async def monitor_tick(session: Session, executor: TwakExecutor):
@@ -169,6 +211,19 @@ async def monitor_tick(session: Session, executor: TwakExecutor):
         if not exit_triggered:
             continue
 
+        r_mult = _r_multiple(pos, mark)
+
+        # --- SHADOW positions: paper close, NO execution / NO capital, but record
+        #     the Trade + StrategyStat so the arbiter can promote a proven strategy.
+        if getattr(pos, "is_shadow", False):
+            cap_pnl_pct = fav_pct * (leverage if is_perp else 1.0)
+            pnl_usd = pos.invested * cap_pnl_pct / 100.0
+            _record_close(session, pos, now_dt, mark, pnl_usd, cap_pnl_pct, hold_min,
+                          exit_reason, r_mult, tx="SHADOW", window="SHADOW")
+            await log_engine_msg(session, "info", f"[shadow] {pos.strategy} {symbol} paper-closed {exit_reason}: {r_mult:+.2f}R")
+            remove_position(session, pos.id)
+            continue
+
         await log_engine_msg(
             session, "warn",
             f"[MONITOR EXIT] Closing {symbol} {direction}{'·perp' if is_perp else ''}. "
@@ -193,22 +248,10 @@ async def monitor_tick(session: Session, executor: TwakExecutor):
                 pnl_realized = res.amount_out - pos.invested
                 pct_realized = (pnl_realized / pos.invested) * 100.0 if pos.invested > 0 else 0.0
                 trade_status = "win" if pnl_realized > 0 else "loss"
-
-                trade = session.get(Trade, pos.id)
-                if trade:
-                    trade.status = trade_status
-                    trade.closed_at = now_dt.isoformat()
-                    trade.pnl_usd = round(pnl_realized, 4)
-                    trade.pnl_pct = round(pct_realized, 2)
-                    trade.hold_minutes = round(hold_min, 1)
-                    trade.exit_reason = exit_reason
-                    trade.tx_close = res.tx_hash
-                    trade.exit_price = res.executed_price or mark
-                    trade.exit_mc = quote.market_cap
-                    session.add(trade)
-                    session.commit()
-
-                await log_engine_msg(session, "info", f"[MONITOR SUCCESS] Exited {symbol}. realized PnL=${pnl_realized:.2f} ({pct_realized:.1f}% on capital)")
+                exit_px = res.executed_price or mark
+                _record_close(session, pos, now_dt, exit_px, pnl_realized, pct_realized,
+                              hold_min, exit_reason, r_mult, tx=res.tx_hash)
+                await log_engine_msg(session, "info", f"[MONITOR SUCCESS] Exited {symbol}. realized PnL=${pnl_realized:.2f} ({pct_realized:.1f}% on capital, {r_mult:+.2f}R)")
                 apply_cooldown(session, symbol, trade_status, hold_min)
             else:
                 await log_engine_msg(session, "error", f"[MONITOR ERROR] Exit failed for {symbol}: {res.error}")

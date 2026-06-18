@@ -171,4 +171,9 @@ async def health():
         db_ok = False
     # Healthy = DB reachable AND (monitor loop alive OR engine intentionally stopped)
     ok = db_ok and (h.get("monitor_alive", False) or not h.get("running", False))
-    return {"ok": ok, "db": db_ok, "scheduler": h, "t": datetime.now(timezone.utc).isoformat()}
+    try:
+        from data import ws_feed
+        ws = ws_feed.status()
+    except Exception:
+        ws = {}
+    return {"ok": ok, "db": db_ok, "scheduler": h, "wsFeed": ws, "t": datetime.now(timezone.utc).isoformat()}

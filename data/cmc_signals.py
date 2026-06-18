@@ -61,6 +61,34 @@ async def get_macro_signals() -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"liquidation-risk skill unavailable: {e}")
 
+    # Market-wide funding regime (BTC as the bellwether)
+    try:
+        raw = await get_cached_mcp_skill("detect_funding_rate_regime_shift", {"symbol": "BTC"}, ttl_minutes=30)
+        rep = _extract_report(raw)
+        if rep:
+            macro["funding_regime"] = rep.get("regime_state")
+            macro["funding_sign_flip"] = rep.get("sign_flip_detected")
+            macro["funding_shift_bps"] = rep.get("oi_weighted_shift_bps")
+    except Exception as e:
+        logger.warning(f"funding-regime skill unavailable: {e}")
+
+    # OI dark-flow + leverage-reset (institutional positioning / bottoming)
+    try:
+        raw = await get_cached_mcp_skill("detect_oi_dark_flow_setup", {"symbol": "BTC"}, ttl_minutes=30)
+        rep = _extract_report(raw)
+        if rep:
+            macro["oi_dark_flow"] = rep.get("setup_state") or rep.get("dark_flow_state") or rep.get("state")
+    except Exception as e:
+        logger.warning(f"oi-dark-flow skill unavailable: {e}")
+
+    try:
+        raw = await get_cached_mcp_skill("detect_leverage_reset_completion", {"symbol": "BTC"}, ttl_minutes=30)
+        rep = _extract_report(raw)
+        if rep:
+            macro["leverage_reset"] = rep.get("reset_state") or rep.get("completion_state") or rep.get("state")
+    except Exception as e:
+        logger.warning(f"leverage-reset skill unavailable: {e}")
+
     return macro
 
 

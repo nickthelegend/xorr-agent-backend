@@ -37,48 +37,24 @@ STRATEGIES = {
     "xsect_momentum": CrossSectionalMomentumStrategy,
 }
 
-def active_strategies(settings, suspended_list: List[str] = None) -> List[BaseStrategy]:
-    """
-    Returns only strategies that are:
-    (a) enabled in settings
-    (b) not in the arbiter's suspended list.
-    """
-    if suspended_list is None:
-        suspended_list = []
-        
+def active_strategies(settings, suspended_list: List[str] = None,
+                      promoted_list: List[str] = None) -> List[BaseStrategy]:
+    """Strategies that are ACTIVE this scan: (config-enabled OR arbiter-promoted
+    from shadow) AND not arbiter-suspended. Every flag follows enable_strategy_<key>."""
+    suspended = set(suspended_list or [])
+    promoted = set(promoted_list or [])
     active = []
-    
-    if settings.enable_strategy_momentum_pullback and "momentum_pullback" not in suspended_list:
-        active.append(MomentumPullbackStrategy())
-    if settings.enable_strategy_fib_golden_pocket and "fib_golden_pocket" not in suspended_list:
-        active.append(FibGoldenPocketStrategy())
-    if settings.enable_strategy_capitulation and "capitulation" not in suspended_list:
-        active.append(CapitulationStrategy())
-    if settings.enable_strategy_news_catalyst and "news_catalyst" not in suspended_list:
-        active.append(NewsCatalystStrategy())
-    if settings.enable_strategy_mean_reversion and "mean_reversion" not in suspended_list:
-        active.append(MeanReversionStrategy())
-    if settings.enable_strategy_trend_follow and "trend_follow" not in suspended_list:
-        active.append(TrendFollowStrategy())
-    if settings.enable_strategy_vol_squeeze and "vol_squeeze" not in suspended_list:
-        active.append(VolSqueezeStrategy())
-    if settings.enable_strategy_whale_flow and "whale_flow" not in suspended_list:
-        active.append(WhaleFlowStrategy())
-    if settings.enable_strategy_donchian_breakout and "donchian_breakout" not in suspended_list:
-        active.append(DonchianBreakoutStrategy())
-    if getattr(settings, "enable_strategy_donchian_perp", True) and "donchian_perp" not in suspended_list:
-        active.append(DonchianPerpStrategy())
-    if getattr(settings, "enable_strategy_salamander_perp", True) and "salamander_perp" not in suspended_list:
-        active.append(SalamanderPerpStrategy())
-    if getattr(settings, "enable_strategy_supertrend_perp", False) and "supertrend_perp" not in suspended_list:
-        active.append(SupertrendPerpStrategy())
-    if getattr(settings, "enable_strategy_volsqueeze_perp", False) and "volsqueeze_perp" not in suspended_list:
-        active.append(VolSqueezePerpStrategy())
-    if getattr(settings, "enable_strategy_rsi_div_perp", False) and "rsi_div_perp" not in suspended_list:
-        active.append(RsiDivPerpStrategy())
-    if settings.enable_strategy_rsi_reversion and "rsi_reversion" not in suspended_list:
-        active.append(RsiReversionStrategy())
-    if settings.enable_strategy_xsect_momentum and "xsect_momentum" not in suspended_list:
-        active.append(CrossSectionalMomentumStrategy())
-
+    for name, cls in STRATEGIES.items():
+        enabled = bool(getattr(settings, f"enable_strategy_{name}", False)) or name in promoted
+        if enabled and name not in suspended:
+            active.append(cls())
     return active
+
+
+def shadow_test_names(settings, active_names) -> List[str]:
+    """Registered strategies to run as paper SHADOW this scan: the configured
+    shadow_test_strategies that aren't already active (don't shadow what's live)."""
+    raw = getattr(settings, "shadow_test_strategies", "") or ""
+    want = [s.strip() for s in raw.split(",") if s.strip()]
+    active = set(active_names)
+    return [n for n in want if n in STRATEGIES and n not in active]

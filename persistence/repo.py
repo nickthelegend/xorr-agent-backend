@@ -46,6 +46,12 @@ def get_trades(session: Session, window: str = "all") -> List[Trade]:
         statement = statement.where(Trade.window == "COMPETITION")
     elif window == "qualifier":
         statement = statement.where(Trade.window == "QUALIFIER")
+    elif window == "shadow":
+        statement = statement.where(Trade.window == "SHADOW")
+    else:
+        # "all" excludes SHADOW (paper-test) trades so they never pollute real
+        # PnL / win-rate / the trades ledger.
+        statement = statement.where(Trade.window != "SHADOW")
     # Sort by opened_at descending
     trades = list(session.exec(statement).all())
     trades.sort(key=lambda x: x.opened_at, reverse=True)

@@ -44,6 +44,8 @@ async def _flatten_all_positions(session: Session, executor: TwakExecutor):
     quotes = await fetch_cmc_quotes()
 
     for pos in positions:
+        if getattr(pos, "is_shadow", False):
+            continue  # paper-test position — no capital, leave it for the monitor
         kq = quotes.get(pos.symbol.upper())
         kill_price = kq.price if kq else 0.0
         print(f"[KILL SWITCH] Closing {pos.symbol} {getattr(pos,'direction','long')} (${pos.invested:.2f})")

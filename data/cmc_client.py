@@ -102,7 +102,12 @@ async def fetch_fast_quotes() -> Dict[str, Quote]:
     credits. Falls back to the CMC cache if Binance is unreachable."""
     global _fast_cache, _fast_fetch_time
     now = time.time()
+    # Real-time WS feed (lazy-start); overlay its sub-second marks on every call,
+    # even a REST cache hit, so the mark is always as fresh as the socket allows.
+    from data import ws_feed
+    ws_feed.ensure_started()
     if _fast_cache and (now - _fast_fetch_time < FAST_CACHE_SEC):
+        ws_feed.overlay(_fast_cache)
         return _fast_cache
     tokens = iter_tradable()
     symbols = [t.symbol for t in tokens]
@@ -110,8 +115,12 @@ async def fetch_fast_quotes() -> Dict[str, Quote]:
     if q:
         _fast_cache = q
         _fast_fetch_time = now
+        ws_feed.overlay(_fast_cache)
         return _fast_cache
-    return _fast_cache or _cmc_quotes_cache
+    if _fast_cache:
+        ws_feed.overlay(_fast_cache)
+        return _fast_cache
+    return _cmc_quotes_cache
 
 
 async def _fetch_fallback_quotes(symbols: List[str], _store_global: bool = True) -> Dict[str, Quote]:

@@ -47,6 +47,8 @@ class Position(SQLModel, table=True):
     leverage: float = 1.0
     margin_usd: float = 0.0        # collateral posted (mirrors `invested` for perps)
     liquidation_price: float = 0.0
+    is_shadow: bool = False        # paper-test position (no capital); strategy stored as shadow_<name>
+    init_stop: float = 0.0         # initial stop price (never trailed) — for R-multiple stats
 
 class EquityPoint(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

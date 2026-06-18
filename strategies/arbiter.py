@@ -15,6 +15,42 @@ class StrategyArbiter:
     def __init__(self):
         # Set of suspended strategy names
         self.suspended_strategies: Set[str] = set()
+        # Disabled strategies PROMOTED to active because their shadow track proved out
+        self.promoted_strategies: Set[str] = set()
+
+    def evaluate_promotions(self, session: Session):
+        """Promote a shadow-tested (disabled) strategy to active once its paper
+        track proves out (>=8 shadow trades, expectancy >0.25R); demote a promoted
+        strategy if its REAL track then bleeds (>=10 trades, E<0)."""
+        from persistence.models import StrategyStat
+        raw = getattr(settings, "shadow_test_strategies", "") or ""
+        shadow_names = [s.strip() for s in raw.split(",") if s.strip()]
+
+        for name in shadow_names:
+            if name in self.promoted_strategies:
+                continue
+            stmt = select(StrategyStat).where(StrategyStat.strategy == f"shadow_{name}").order_by(StrategyStat.closed_at.desc()).limit(12)
+            stats = list(session.exec(stmt).all())
+            if len(stats) >= 8:
+                e = sum(s.r_realized for s in stats[:8]) / 8.0
+                if e > 0.25:
+                    self.promoted_strategies.add(name)
+                    logger.info(f"[ARBITER] PROMOTE shadow '{name}' to active (shadow E={e:.2f}R)")
+                    log_decision(DecisionLog(id=str(uuid.uuid4()), t=datetime.now(timezone.utc),
+                                             symbol="SYS", action="PROMOTE", strategy=name,
+                                             reasoning=f"Shadow expectancy {e:.2f}R over 8 trades > 0.25R. Promoting to live."))
+
+        for name in list(self.promoted_strategies):
+            stmt = select(StrategyStat).where(StrategyStat.strategy == name).order_by(StrategyStat.closed_at.desc()).limit(12)
+            stats = list(session.exec(stmt).all())
+            if len(stats) >= 10:
+                e = sum(s.r_realized for s in stats[:10]) / 10.0
+                if e < 0.0:
+                    self.promoted_strategies.discard(name)
+                    logger.info(f"[ARBITER] DEMOTE promoted '{name}' (real E={e:.2f}R < 0)")
+                    log_decision(DecisionLog(id=str(uuid.uuid4()), t=datetime.now(timezone.utc),
+                                             symbol="SYS", action="DEMOTE", strategy=name,
+                                             reasoning=f"Promoted strategy real expectancy {e:.2f}R < 0. Back to shadow."))
 
     def update_suspended_states(self, session: Session):
         """
@@ -130,6 +166,7 @@ class StrategyArbiter:
         Filters signals based on suspension states and symbol concentration caps.
         """
         self.update_suspended_states(session)
+        self.evaluate_promotions(session)
 
         base_size = settings.base_trade_size_usd
         total_deployed = sum(p.invested for p in open_positions)

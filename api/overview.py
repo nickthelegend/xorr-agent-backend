@@ -42,8 +42,10 @@ async def get_overview(session: Session = Depends(get_session)):
         bnb_price = bnb_q.price
         bnb_usd_val = bnb_bal * bnb_price
     from core import perp_math
+    # Real positions only — shadow (paper-test) positions hold no capital.
+    real_positions = [p for p in positions if not getattr(p, "is_shadow", False)]
     open_positions_usd = 0.0
-    for p in positions:
+    for p in real_positions:
         q = quotes.get(p.symbol.upper())
         # perp-aware: spot = units*price; perp = margin + directional uPnL
         open_positions_usd += perp_math.position_equity(p, q.price if (q and q.price > 0) else 0.0)
@@ -138,7 +140,7 @@ async def get_overview(session: Session = Depends(get_session)):
             "losses": losses
         },
         "openPositions": {
-            "count": len(positions),
+            "count": len(real_positions),
             "monitoredEverySec": 60
         },
         "fearGreed": {

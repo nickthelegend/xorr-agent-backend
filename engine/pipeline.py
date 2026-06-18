@@ -18,7 +18,7 @@ from filters.cooldown import is_blacklisted
 import filters.volume_gate as volume_gate
 import filters.whale_netflow as whale_netflow
 import filters.confluence_score as confluence_score
-from strategies.registry import active_strategies
+from strategies.registry import active_strategies, shadow_test_names, STRATEGIES
 from brain.council import score_council
 from brain.decision_log import log_decision
 from risk.drawdown_ladder import calculate_drawdown_multiplier
@@ -107,8 +107,11 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
     
     # 3. Calculate portfolio equity and evaluate kill switch
     open_pos = ctx.open_positions
+    # Shadow positions are paper (no capital) — exclude them from real equity,
+    # slot counts, sizing and the kill switch. They're managed by the monitor.
+    real_open = [p for p in open_pos if not getattr(p, "is_shadow", False)]
     portfolio_value = usdt_balance + (bnb_balance * ctx.bnb_price_usd)
-    for pos in open_pos:
+    for pos in real_open:
         # Perp-aware valuation: spot = units*price; perp = margin + directional uPnL.
         quote = ctx.quotes.get(pos.symbol.upper())
         price = quote.price if quote else 0.0
@@ -224,7 +227,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
 
     # 7. Evaluate Strategy Signals
     raw_signals = []
-    enabled_strats = active_strategies(settings, list(arbiter.suspended_strategies))
+    enabled_strats = active_strategies(settings, list(arbiter.suspended_strategies), list(arbiter.promoted_strategies))
     perp_strats = [s for s in enabled_strats if "perp" in s.name.lower()]
     spot_strats = [s for s in enabled_strats if "perp" not in s.name.lower()]
 
@@ -246,7 +249,10 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
     # 7b. PERP book: evaluate the liquid majors DIRECTLY, bypassing the long-biased
     #     candidate gates (whale-flow / confluence) so a breakdown SHORT in a falling
     #     tape is actually seen. CEX-sanity + cooldown still apply.
-    if settings.enable_perps and perp_strats:
+    shadow_perp = [n for n in shadow_test_names(settings, [s.name for s in enabled_strats]) if "perp" in n]
+    if settings.enable_perps and (perp_strats or shadow_perp):
+        existing_shadow = {(p.strategy, p.symbol.upper()) for p in open_pos if getattr(p, "is_shadow", False)}
+        n_shadow = sum(1 for p in open_pos if getattr(p, "is_shadow", False))
         for symbol in _perp_universe(ctx):
             quote = ctx.quotes.get(symbol.upper())
             if not quote:
@@ -257,13 +263,54 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
                 continue
             candles_5m = await fetch_binance_klines(symbol, "5m", limit=35)
             candles_1h = await fetch_binance_klines(symbol, "1h", limit=80)
+            # --- real perp signals (funding-fade biased) ---
             for strat in perp_strats:
                 try:
                     sig = await strat.evaluate(symbol, candles_5m, candles_1h, ctx)
-                    if sig:
-                        raw_signals.append(sig)
+                    if not sig:
+                        continue
+                    if getattr(settings, "enable_funding_fade", True):
+                        try:
+                            from data.funding import get_funding_state, funding_confidence_mult
+                            fstate = await get_funding_state(symbol)
+                            mult, reason = funding_confidence_mult(sig.direction, fstate)
+                            if mult != 1.0:
+                                sig.confidence = max(0.05, min(0.97, sig.confidence * mult))
+                                sig.rationale += f" | {reason}"
+                        except Exception as fe:
+                            print(f"[FUNDING] bias skipped for {symbol}: {fe}")
+                    raw_signals.append(sig)
                 except Exception as e:
                     print(f"[ENGINE ERROR] Perp strategy '{strat.name}' crashed on {symbol}: {e}")
+            # --- SHADOW paper positions for disabled strategies (no capital) ---
+            for name in shadow_perp:
+                if n_shadow >= 12:
+                    break
+                if (f"shadow_{name}", symbol.upper()) in existing_shadow:
+                    continue
+                try:
+                    ssig = await STRATEGIES[name]().evaluate(symbol, candles_5m, candles_1h, ctx)
+                except Exception:
+                    ssig = None
+                if not ssig:
+                    continue
+                lev = float(getattr(ssig, "leverage", settings.perp_leverage))
+                entry = quote.price
+                if ssig.direction == "short":
+                    s_sl = entry * (1 + ssig.stop_loss_pct / 100.0); s_tp = entry * (1 - ssig.take_profit_pct / 100.0)
+                else:
+                    s_sl = entry * (1 - ssig.stop_loss_pct / 100.0); s_tp = entry * (1 + ssig.take_profit_pct / 100.0)
+                spos = Position(
+                    id=f"SHADOW:{uuid.uuid4()}", symbol=symbol, contract=ssig.contract, opened_at=time.time(),
+                    entry_price=entry, stop_loss=s_sl, take_profit=s_tp, init_stop=s_sl,
+                    size=perp_math.notional_units(1.0, lev, entry), strategy=f"shadow_{name}", invested=1.0,
+                    mode="simulation" if executor.simulation else "live", is_perp=True, venue="perp",
+                    direction=ssig.direction, leverage=lev, margin_usd=1.0,
+                    liquidation_price=perp_math.liquidation_price(entry, lev, ssig.direction), is_shadow=True,
+                )
+                add_position(session, spos)
+                existing_shadow.add((f"shadow_{name}", symbol.upper())); n_shadow += 1
+                await log_engine_msg(session, "info", f"[shadow] {name} {ssig.direction} {symbol} paper-opened @ ${entry:.4f}")
 
     if not raw_signals:
         await log_engine_msg(session, "info", "[bot] No technical signals triggered. Scan complete.")
@@ -277,7 +324,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
         await log_engine_msg(session, "info", f"[bot] {n_combos} ensemble signal(s) where multiple strategies agree.")
 
     # 8. Post-Process via Arbiter
-    arbitrated_signals = arbiter.filter(session, combined_signals, open_pos)
+    arbitrated_signals = arbiter.filter(session, combined_signals, real_open)
     if not arbitrated_signals:
         await log_engine_msg(session, "info", "[bot] All signals rejected by Strategy Arbiter.")
         return
@@ -289,7 +336,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
 
     # 10. Execute highest ranked trade(s)
     # We only take the top scored signals up to remaining concurrent slots
-    free_slots = settings.max_concurrent_positions - len(open_pos)
+    free_slots = settings.max_concurrent_positions - len(real_open)
     if free_slots <= 0:
         await log_engine_msg(session, "info", "[bot] Standard scan complete. Portfolio fully occupied (max concurrent positions).")
         return
@@ -329,7 +376,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
         if is_perp_sig:
             stake = calculate_perp_margin(
                 equity=portfolio_value,
-                open_positions=open_pos,
+                open_positions=real_open,
                 council_confidence=dec.final_confidence,
                 n_agree=getattr(sig, "n_agree", 1),
                 drawdown_multiplier=dd_mult,
@@ -337,7 +384,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
             )
         else:
             stake = calculate_trade_size(
-                ctx.fear_greed_value, dd_mult, sig.strategy_name, usdt_balance, len(open_pos),
+                ctx.fear_greed_value, dd_mult, sig.strategy_name, usdt_balance, len(real_open),
                 council_confidence=dec.final_confidence, council_consensus=dec.consensus,
                 n_agree=getattr(sig, "n_agree", 1),
             )
@@ -393,6 +440,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
                     is_perp=is_perp_sig, venue=("perp" if is_perp_sig else "spot"),
                     direction=direction, leverage=leverage,
                     margin_usd=(stake if is_perp_sig else 0.0), liquidation_price=liq,
+                    init_stop=stop_loss,
                 )
                 add_position(session, new_pos)
 
@@ -420,7 +468,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
                     market_snapshot={"price": entry, "score": score}, council=asdict(dec)))
 
                 trades_executed += 1
-                open_pos.append(new_pos)
+                real_open.append(new_pos)
             else:
                 await log_engine_msg(session, "error", f"[bot] Entry failed for {sig.symbol}: {res.error}")
         except Exception as e:

@@ -57,6 +57,8 @@ _MIGRATIONS = {
         ("leverage", "FLOAT", "1.0"),
         ("margin_usd", "FLOAT", "0.0"),
         ("liquidation_price", "FLOAT", "0.0"),
+        ("is_shadow", "BOOLEAN", "0"),
+        ("init_stop", "FLOAT", "0.0"),
     ],
 }
 

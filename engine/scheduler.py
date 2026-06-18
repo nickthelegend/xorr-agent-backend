@@ -28,6 +28,13 @@ class EngineScheduler:
         self._running = True
         self._scan_trigger_event.clear()
 
+        # Start the real-time WS price feed alongside the loops
+        try:
+            from data import ws_feed
+            ws_feed.ensure_started()
+        except Exception as e:
+            print(f"[SCHEDULER] WS feed start skipped: {e}")
+
         # Start loops
         self._scan_task = asyncio.create_task(self._scan_loop())
         self._monitor_task = asyncio.create_task(self._monitor_loop())
