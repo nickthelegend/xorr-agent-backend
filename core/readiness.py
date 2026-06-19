@@ -85,8 +85,15 @@ def check_readiness() -> Dict[str, Any]:
             mode = st.mode
     except Exception:
         pass
-    add("registered", "Registered on-chain (twak compete register)", registered,
-        detail=("yes" if registered else "no"), fix="POST /api/engine/register (or `twak compete register`)")
+    # On-chain truth beats the local flag (we register via web3, not only TWAK).
+    try:
+        from core.erc8004 import competition_is_registered
+        registered = registered or competition_is_registered()
+    except Exception:
+        pass
+    add("registered", "Registered on-chain (competition contract)", registered,
+        detail=("yes" if registered else "no"),
+        fix="python -m scripts.register_agent --send  (registers ERC-8004 + competition)")
 
     # --- ERC-8004 (BRC8004) identity registration ---
     erc8004 = False

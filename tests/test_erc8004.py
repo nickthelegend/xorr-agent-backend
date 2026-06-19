@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 WALLET = "0x3551f68748AACDd77d28a4149C014f8FFbb95f91"
 
 
-def _fake_w3(balance_wei=0, gas_price=int(0.05e9), registered_bal=0):
+def _fake_w3(balance_wei=0, gas_price=int(0.05e9), registered_bal=0, competition_registered=False):
     w3 = MagicMock()
     w3.to_checksum_address.side_effect = lambda a: a
     w3.eth.get_balance.return_value = balance_wei
@@ -24,6 +24,12 @@ def _fake_w3(balance_wei=0, gas_price=int(0.05e9), registered_bal=0):
     bal_fn = MagicMock()
     bal_fn.call.return_value = registered_bal
     contract.functions.balanceOf.return_value = bal_fn
+    isreg_fn = MagicMock()
+    isreg_fn.call.return_value = bool(competition_registered)
+    contract.functions.isRegistered.return_value = isreg_fn
+    dl_fn = MagicMock()
+    dl_fn.call.return_value = 1782345600
+    contract.functions.registrationDeadline.return_value = dl_fn
     w3.eth.contract.return_value = contract
     rcpt = MagicMock()
     rcpt.status = 1
@@ -86,4 +92,35 @@ def test_funded_send_broadcasts_once():
         res = register_agent(send=True)
     assert "REGISTERED" in res["status"].upper()
     assert "txHash" in res
+    w3.eth.send_raw_transaction.assert_called_once()
+
+
+def test_competition_dry_run_broadcasts_nothing():
+    w3, _ = _fake_w3(balance_wei=int(1e16))
+    p1, p2 = _patch(w3)
+    with p1, p2:
+        from core.erc8004 import register_competition
+        res = register_competition(send=False)
+    assert res["ok"] and "DRY RUN" in res["status"]
+    assert res["deadline"] == 1782345600
+    w3.eth.send_raw_transaction.assert_not_called()
+
+
+def test_competition_already_registered_short_circuits():
+    w3, _ = _fake_w3(competition_registered=True)
+    p1, p2 = _patch(w3)
+    with p1, p2:
+        from core.erc8004 import register_competition
+        res = register_competition(send=True)
+    assert "ALREADY" in res["status"].upper()
+    w3.eth.send_raw_transaction.assert_not_called()
+
+
+def test_competition_funded_send_broadcasts_once():
+    w3, _ = _fake_w3(balance_wei=int(1e16))
+    p1, p2 = _patch(w3)
+    with p1, p2:
+        from core.erc8004 import register_competition
+        res = register_competition(send=True)
+    assert "REGISTERED" in res["status"].upper() and "txHash" in res
     w3.eth.send_raw_transaction.assert_called_once()

@@ -88,22 +88,22 @@ Wallet page → fundable address before sending.)
 
 ## 2. Register on-chain (required to be scored)
 
-**a) ERC-8004 agent identity** (BRC8004 Identity Registry, BSC `0xfA09…59D7`) — mints your
-agent's identity NFT. DRY-RUN first (sends nothing), then `--send` once the wallet has BNB:
+**One command does BOTH registrations**, signed locally by the same wallet that trades —
+**no TWAK creds needed** (the competition contract is a permissionless `register()`):
 ```bash
-python -m scripts.register_agent           # dry run: shows wallet, gas (~$0.01), sends nothing
-python -m scripts.register_agent --send     # registers for real (after funding BNB)
+python -m scripts.register_agent           # DRY RUN — shows plans + gas, sends nothing
+python -m scripts.register_agent --send     # broadcasts both (each ~$0.003–0.01 gas)
 ```
-It signs locally with the same wallet, no fee (only ~$0.01 gas). Re-runs are safe — it
-short-circuits if the wallet already owns an agent NFT. The agent-card JSON it points to is
-[`agent_card.json`](agent_card.json) at the repo root.
+1. **ERC-8004 Identity Registry** (BRC8004, BSC `0xfA09…59D7`) — mints the agent identity
+   NFT, pointing to [`agent_card.json`](agent_card.json).
+2. **Competition contract** (`0x212c…aed5`) — enrolls the wallet for scoring (registration
+   deadline **2026-06-25**).
 
-**b) Competition registration** (contract `0x212c…aed5`):
-```bash
-twak compete register          # OR: POST /api/engine/register  (auto-called on first LIVE boot)
-twak compete status
-```
-Then submit your **agent wallet address** + a short strategy explainer on DoraHacks.
+Re-runs are safe — each step short-circuits if already registered. Then submit your **agent
+wallet address** + a short strategy explainer on DoraHacks.
+
+> TWAK's `twak compete register` would register a *different* (TWAK-managed) wallet and needs
+> API creds — so we register the funded/trading wallet directly via web3 instead.
 
 ## 3. ✅ No perp verification needed (spot-only)
 
