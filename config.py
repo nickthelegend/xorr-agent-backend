@@ -155,10 +155,11 @@ class Settings(BaseSettings):
     volsq_tp_atr: float = Field(default=3.5)
     rsi_div_lookback: int = Field(default=20)
 
-    # Strategies that stay ENABLED for perps but must NOT trade in spot-only mode
-    # (their edge is the SHORT side, so long-only they lose). Skipped in the spot
-    # branch of the pipeline; still active when spot_only=False (perps).
-    spot_excluded_strategies: str = Field(default="salamander_perp")
+    # Strategies that stay ENABLED for perps but must NOT trade in spot-only mode —
+    # either their edge is the SHORT side (salamander) or they fail the long-only
+    # spot OOS test (aroon_mr: KNOWN +32% but UNKNOWN -9%, overfit long-only).
+    # Skipped in the spot branch of the pipeline; still active when spot_only=False.
+    spot_excluded_strategies: str = Field(default="salamander_perp,aroon_mr_perp")
 
     # --- Trading venue (HACKATHON: SPOT ONLY) ---
     # The competition allows spot trading only — no perps. In spot_only mode the

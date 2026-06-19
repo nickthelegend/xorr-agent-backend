@@ -75,8 +75,15 @@ salamander_perp                80%/dd12 |     -2  12.6  0.04  51   |      -6  12
 **11 of 12 stay OOS-positive long-only**, most with win rates 56–66% and drawdowns well
 under 15% (vs the 30% gate). `salamander_perp` is the lone failure — negative on *both*
 halves with a 46% win rate — because its edge was shorting rallies; long-only it just buys
-into downtrends. So it's **excluded from the spot book** (via `spot_excluded_strategies`)
-while **staying enabled for perps**. Everything else stays enabled.
+into downtrends.
+
+Running the **full** `--spot --all` (every registered strategy, not just the core book)
+caught a second one: **`aroon_mr_perp`** (the trader.dev oscillator) is KNOWN **+32%** but
+UNKNOWN **−9%** — strong on the tuned half, fails the unseen half. It passed the *perp*
+gauntlet (both directions, fixed sizing) but long-only spot it overfits. So **both
+`salamander_perp` and `aroon_mr_perp` are excluded from the spot book** (via
+`spot_excluded_strategies`) while **staying enabled for perps**. Everything else stays
+enabled. Net: **27/39 of all strategies are OOS-positive long-only spot.**
 
 > These are ~1-year compounding figures at tuned sizing. Over a single competition *week*
 > they scale down to low single-digit % on average — reversion is bursty, so a week with

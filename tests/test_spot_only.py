@@ -42,6 +42,16 @@ def test_enforce_spot_only_drops_an_all_short_batch():
     assert enforce_spot_only([_sig("short"), _sig("short")]) == []
 
 
+def test_short_edge_and_overfit_strategies_excluded_from_spot():
+    # salamander (short-edge) and aroon_mr (fails long-only spot OOS) must not
+    # trade in spot — but stay enabled so they still run for perps.
+    excl = {s.strip() for s in settings.spot_excluded_strategies.split(",") if s.strip()}
+    assert "salamander_perp" in excl
+    assert "aroon_mr_perp" in excl
+    assert settings.enable_strategy_salamander_perp is True   # kept for perps
+    assert settings.enable_strategy_aroon_mr_perp is True     # kept for perps
+
+
 @pytest.mark.anyio
 async def test_open_perp_blocked_in_spot_only_mode():
     # The hackathon default. Even a sim executor must refuse to open a perp.
