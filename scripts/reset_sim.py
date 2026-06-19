@@ -32,12 +32,14 @@ def main():
         n_pos = len(s.exec(select(Position)).all())
         s.exec(delete(Trade))
         s.exec(delete(Position))
-        # StrategyStat is optional (rolling R per strategy); clear it for a clean slate.
-        try:
-            from persistence.models import StrategyStat
-            s.exec(delete(StrategyStat))
-        except Exception:
-            pass
+        # Clear the equity curve + engine log too, so each run starts from a clean
+        # slate (they persist across runs otherwise and skew the curve/log view).
+        for extra in ("StrategyStat", "EquityPoint", "EngineLog"):
+            try:
+                from persistence import models as _m
+                s.exec(delete(getattr(_m, extra)))
+            except Exception:
+                pass
         s.commit()
         st = get_state(s)
         st.mode = "simulation"

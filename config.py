@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     slippage_bps_news: int = Field(default=300)
     max_drawdown_pct: float = Field(default=20.0)
     kill_drawdown_pct: float = Field(default=25.0)
-    cex_deviation_bps: int = Field(default=120)
+    cex_deviation_bps: int = Field(default=300)   # CMC-vs-CEX sanity bound. 120 was too tight (blocked majors like AVAX on normal ~2.8% feed gaps); 300 still rejects gross token mismatches (e.g. a wrong "U" at ~50% gap). Actual fill is protected by PancakeSwap min_out slippage.
     liquidity_impact_bps: int = Field(default=150)
     quality_mode: bool = Field(default=True)
     confluence_threshold: int = Field(default=70)            # trend-strategy internal bar (quality)
