@@ -87,19 +87,72 @@ def test_validate_drops_unknown_strategy_and_low_conviction():
     assert out["avoid"] == ["DOGE"]
 
 
+async def _noop_confluence(ranked, top_n):   # keep decide_playbook network-free in tests
+    return None
+
+
 @pytest.mark.anyio
-async def test_decide_falls_back_when_cli_unavailable():
-    with patch("claude.claude_brain._call_claude_sync", return_value=None):
+async def test_decide_falls_back_when_cli_unavailable(monkeypatch):
+    monkeypatch.setattr(claude_brain.settings, "claude_gate_on_confluence", False)
+    monkeypatch.setattr(claude_brain.settings, "enable_groq_screen", False)
+    with patch("claude.confluence.attach_confluence", _noop_confluence), \
+         patch("claude.claude_brain._call_claude_sync", return_value=None):
         pb = await claude_brain.decide_playbook(_watchlist())
     assert pb["source"] == "fallback" and isinstance(pb["picks"], list)
 
 
 @pytest.mark.anyio
-async def test_decide_uses_claude_when_cli_returns_valid():
+async def test_decide_uses_claude_when_cli_returns_valid(monkeypatch):
+    monkeypatch.setattr(claude_brain.settings, "claude_gate_on_confluence", False)
+    monkeypatch.setattr(claude_brain.settings, "enable_groq_screen", False)
     fake = {"market_view": "buy the dip", "picks": [
         {"symbol": "ETH", "strategy": "liq_reversion_perp", "conviction": 0.8, "reason": "oversold"}],
         "avoid": []}
-    with patch("claude.claude_brain._call_claude_sync", return_value=fake):
+    with patch("claude.confluence.attach_confluence", _noop_confluence), \
+         patch("claude.claude_brain._call_claude_sync", return_value=fake):
+        pb = await claude_brain.decide_playbook(_watchlist())
+    assert pb["source"] == "claude" and pb["picks"][0]["symbol"] == "ETH"
+
+
+@pytest.mark.anyio
+async def test_gate_stands_aside_without_confluence(monkeypatch):
+    """When confluence is computed but nothing meets the bar, Claude is NOT called."""
+    monkeypatch.setattr(claude_brain.settings, "enable_groq_screen", False)
+    monkeypatch.setattr(claude_brain.settings, "claude_gate_on_confluence", True)
+
+    async def _weak(ranked, top_n):
+        for r in ranked:
+            r["confluence"] = {"agree": 1, "total": 10, "score": 0.25,
+                               "side": "reversion", "firing": ["rsi34"]}
+
+    calls = {"n": 0}
+
+    def _spy(_prompt):
+        calls["n"] += 1
+        return None
+
+    with patch("claude.confluence.attach_confluence", _weak), \
+         patch("claude.claude_brain._call_claude_sync", _spy):
+        pb = await claude_brain.decide_playbook(_watchlist())
+    assert pb["source"] == "gated-no-confluence" and pb["picks"] == [] and calls["n"] == 0
+
+
+@pytest.mark.anyio
+async def test_gate_allows_claude_with_real_confluence(monkeypatch):
+    """Real multi-lens confluence lets the Claude call through."""
+    monkeypatch.setattr(claude_brain.settings, "enable_groq_screen", False)
+    monkeypatch.setattr(claude_brain.settings, "claude_gate_on_confluence", True)
+
+    async def _strong(ranked, top_n):
+        for r in ranked:
+            r["confluence"] = {"agree": 4, "total": 10, "score": 1.0, "side": "reversion",
+                               "firing": ["rsi22", "stochrsi0.05", "williams-88", "cci-160"]}
+
+    fake = {"market_view": "flush", "picks": [
+        {"symbol": "ETH", "strategy": "liq_reversion_perp", "conviction": 0.8, "reason": "oversold"}],
+        "avoid": []}
+    with patch("claude.confluence.attach_confluence", _strong), \
+         patch("claude.claude_brain._call_claude_sync", return_value=fake):
         pb = await claude_brain.decide_playbook(_watchlist())
     assert pb["source"] == "claude" and pb["picks"][0]["symbol"] == "ETH"
 

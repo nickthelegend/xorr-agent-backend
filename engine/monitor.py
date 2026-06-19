@@ -60,6 +60,18 @@ def _r_multiple(pos, exit_price: float) -> float:
     return move_frac / stop_frac
 
 
+def _price_for_r(pos, r: float) -> float:
+    """The price that locks in `r` R of profit (direction-aware), using the ORIGINAL stop
+    distance so trailing R stays anchored to the real risk that was taken."""
+    entry = pos.entry_price
+    init_stop = getattr(pos, "init_stop", 0.0) or pos.stop_loss
+    if entry <= 0 or init_stop <= 0:
+        return 0.0
+    stop_frac = abs(entry - init_stop) / entry
+    sign = -1.0 if getattr(pos, "direction", "long") == "short" else 1.0
+    return entry * (1.0 + sign * r * stop_frac)
+
+
 def _record_close(session, pos, now_dt, exit_price, pnl_usd, pnl_pct, hold_min, reason, r_mult, tx, window=None):
     """Update/create the Trade row and ALWAYS write a StrategyStat (the rolling-R
     series the arbiter uses to suspend/revive/promote — real AND shadow)."""
@@ -160,48 +172,45 @@ async def monitor_tick(session: Session, executor: TwakExecutor):
             exit_triggered = True
             exit_reason = "TP_HIT"
 
-        # 5. Profit-lock + trailing stop (direction-aware)
+        # 5. Universal risk-free profit engine (EVERY position incl. Claude reversion picks):
+        #    once a trade is +1R in our favour, jump the stop to BREAKEVEN so it can no longer
+        #    lose; past +trail_trigger_r, ratchet a trailing stop that locks in profit and lets
+        #    the winner run. This is the "no-risk-after-it-works" mechanism.
         else:
-            strat = (pos.strategy or "").lower()
-            # momentum (spot long): lock at +2%, trail 1.5%
-            if "momentum" in strat and not is_perp:
-                if fav_pct >= 2.0 and not pos.tp1_hit:
-                    pos.tp1_hit = True
-                    pos.stop_loss = mark * 0.985
-                    session.add(pos); session.commit()
-                    await log_engine_msg(session, "info", f"[MONITOR] Profit-lock {symbol}: +2.0%, trailing SL ${pos.stop_loss:.4f}")
-                elif pos.tp1_hit:
-                    new_stop = mark * 0.985
-                    if new_stop > pos.stop_loss:
-                        pos.stop_loss = new_stop; session.add(pos); session.commit()
-                    if mark <= pos.stop_loss:
-                        exit_triggered = True; exit_reason = "TRAIL_STOP_PROFIT"
-            # breakout family (spot or perp, long or short): lock at +2.5%, trail 3%
-            elif "donchian" in strat or "xsect" in strat or "perp" in strat:
-                if fav_pct >= 2.5 and not pos.tp1_hit:
-                    pos.tp1_hit = True
+            r_now = _r_multiple(pos, mark)            # unrealised R vs the ORIGINAL stop
+            be_r = float(getattr(settings, "breakeven_trigger_r", 1.0))
+            trail_r = float(getattr(settings, "trail_trigger_r", 1.6))
+            giveback = float(getattr(settings, "trail_giveback_r", 0.8))
+            fee_buf = float(getattr(settings, "breakeven_fee_buffer", 0.004))
+
+            # A. risk-free: at +be_r, move the stop to breakeven (+fees), once.
+            if not pos.tp1_hit and r_now >= be_r:
+                pos.tp1_hit = True
+                if direction == "short":
+                    be = entry_price * (1.0 - fee_buf)
+                    pos.stop_loss = be if pos.stop_loss <= 0 else min(pos.stop_loss, be)
+                else:
+                    be = entry_price * (1.0 + fee_buf)
+                    pos.stop_loss = max(pos.stop_loss, be)
+                session.add(pos); session.commit()
+                await log_engine_msg(session, "info",
+                    f"[MONITOR] RISK-FREE {symbol} ({direction}): +{r_now:.2f}R → stop to breakeven ${pos.stop_loss:.6g}")
+
+            # B. trail: past +trail_r, ratchet the stop to lock (r_now - giveback)R.
+            if pos.tp1_hit and r_now >= trail_r:
+                new_stop = _price_for_r(pos, max(0.0, r_now - giveback))
+                if new_stop > 0:
                     if direction == "short":
-                        # stop ABOVE: lock at min(existing, entry-, mark+3%)
-                        lock = min(pos.stop_loss if pos.stop_loss > 0 else 1e18,
-                                   entry_price * 0.995, mark * 1.03)
-                        pos.stop_loss = lock
-                    else:
-                        pos.stop_loss = max(pos.stop_loss, entry_price * 1.005, mark * 0.97)
-                    session.add(pos); session.commit()
-                    await log_engine_msg(session, "info", f"[MONITOR] Breakout profit-lock {symbol} ({direction}): +2.5%, trailing SL ${pos.stop_loss:.4f}")
-                elif pos.tp1_hit:
-                    if direction == "short":
-                        new_stop = mark * 1.03
-                        if new_stop < pos.stop_loss:
+                        if pos.stop_loss <= 0 or new_stop < pos.stop_loss:
                             pos.stop_loss = new_stop; session.add(pos); session.commit()
-                        if mark >= pos.stop_loss:
-                            exit_triggered = True; exit_reason = "TRAIL_STOP_PROFIT"
                     else:
-                        new_stop = mark * 0.97
                         if new_stop > pos.stop_loss:
                             pos.stop_loss = new_stop; session.add(pos); session.commit()
-                        if mark <= pos.stop_loss:
-                            exit_triggered = True; exit_reason = "TRAIL_STOP_PROFIT"
+
+            # C. once armed (breakeven or trailing), exit if that stop is hit.
+            if pos.tp1_hit and _adverse_hit(direction, mark, pos.stop_loss):
+                exit_triggered = True
+                exit_reason = "TRAIL_STOP_PROFIT" if r_now > be_r + 0.05 else "BREAKEVEN_STOP"
 
         # 6. Stagnation: flat trade with no edge after 45m
         if not exit_triggered and hold_min > 45.0 and abs(fav_pct) < 0.2 and not pos.tp1_hit:

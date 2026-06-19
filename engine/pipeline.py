@@ -22,7 +22,7 @@ from strategies.registry import active_strategies, shadow_test_names, STRATEGIES
 from brain.council import score_council
 from brain.decision_log import log_decision
 from risk.drawdown_ladder import calculate_drawdown_multiplier
-from risk.sizing import calculate_trade_size, calculate_perp_margin
+from risk.sizing import calculate_trade_size, calculate_perp_margin, calculate_claude_size
 from core import perp_math
 from risk.kill_switch import check_kill_switch
 from risk.qualifier import is_qualifier_trade_needed, execute_qualifier_trade
@@ -449,6 +449,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
         leverage = float(getattr(sig, "leverage", 1.0)) if is_perp_sig else 1.0
 
         # Calculate risk sizing — perps size by MARGIN under hard caps; spot by notional.
+        is_claude_pick = str(getattr(sig, "strategy_name", "")).startswith("claude:")
         if is_perp_sig:
             stake = calculate_perp_margin(
                 equity=portfolio_value,
@@ -457,6 +458,13 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
                 n_agree=getattr(sig, "n_agree", 1),
                 drawdown_multiplier=dd_mult,
                 available_usdt=usdt_balance,
+            )
+        elif is_claude_pick:
+            # Claude's deliberate, confluence-verified pick — size by conviction with the
+            # drawdown ladder kept, but no Fear&Greed penalty (we're fading fear on purpose).
+            stake = calculate_claude_size(
+                available_usdt=usdt_balance, active_position_count=len(real_open),
+                conviction=dec.final_confidence, drawdown_multiplier=dd_mult,
             )
         else:
             stake = calculate_trade_size(
