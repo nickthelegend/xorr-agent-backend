@@ -167,7 +167,13 @@ def triggered_signals(ctx: MarketContext) -> List[Signal]:
         t = resolve(sym)
         if not t or not t.contract:
             continue
-        sl, tp = _sl_tp(strat)
+        # Risk = Claude's invalidation: stop exactly where the idea is proven wrong (clamped
+        # 1-8%), target ~1.6x the risk. Every loss is then small + pre-defined, not a generic %.
+        if invalid and 0 < invalid < price:
+            sl = max(1.0, min(8.0, (price - invalid) / price * 100.0))
+            tp = round(sl * 1.6, 2)
+        else:
+            sl, tp = _sl_tp(strat)
         # signal strength: conviction, nudged up when deeper into a reversion zone
         strength = conf
         if entry and typ not in ("breakout", "trend") and price < entry:

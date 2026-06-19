@@ -96,6 +96,22 @@ Knobs (config.py): `claude_model` (default `claude-opus-4-8`), `watchlist_interv
 Test it live: `python -m claude.watchlist_agent --decide`. Tests: `python -m pytest
 tests/test_claude_brain.py -q` (9, network-free — the CLI is mocked).
 
+## What happens when a pick loses (risk handling)
+
+Buying a dip that keeps dipping is reversion's classic failure, so losses are *handled*, not
+hoped away:
+- **The stop sits at Claude's `invalidation_price`**, not a generic %. The position exits exactly
+  where Claude said the idea is wrong (clamped 1–8%), with the take-profit at **~1.6× the risk**.
+- So **every loss is small and pre-defined**, and you only need a ~38% win rate to break even at
+  1.6R — reversion runs 55–65%, so the expectancy is positive even though individual losers are
+  normal and expected.
+- The invalidation also **cancels the alert before entry** if price breaks support first (no
+  catching a falling knife), and breakouts are blocked in a downtrend.
+- Above all of it, the **DQ-proof kill switch** (soft de-risk 22%, hard halt 27%) caps the
+  aggregate, so a string of losers can never reach the 30% disqualification cliff.
+
+Losing on a trade is fine — the design makes each loss bounded and the winners bigger.
+
 ## Honest notes
 
 - **Claude curates *what* to play; the strategy label sets the SL/TP profile.** The watchlist

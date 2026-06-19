@@ -67,6 +67,9 @@ STRATEGIES.update(_OSC_MR_IDEAS)
 # broader spot-viable ports from trader.dev (StochRSI MR / ADX trend / BB breakout)
 from strategies.spot_ports import IDEAS as _SPOT_PORT_IDEAS
 STRATEGIES.update(_SPOT_PORT_IDEAS)
+# more reversion oscillators (CCI / Williams %R / BB-bounce / MFI)
+from strategies.reversion_oscillators import IDEAS as _REV_OSC_IDEAS
+STRATEGIES.update(_REV_OSC_IDEAS)
 
 def active_strategies(settings, suspended_list: List[str] = None,
                       promoted_list: List[str] = None) -> List[BaseStrategy]:
