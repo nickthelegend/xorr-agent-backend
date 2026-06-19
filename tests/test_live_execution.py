@@ -9,12 +9,25 @@ Run: python -m pytest tests/test_live_execution.py -q
 import asyncio
 from decimal import Decimal
 
+import pytest
+
 from config import settings
 from core.twak_executor import TwakExecutor
 from data.tokens import resolve
 
 USDT = settings.usdt_contract
 ETH = resolve("ETH").contract
+
+
+@pytest.fixture(autouse=True)
+def _perps_enabled():
+    """These tests exercise the LIVE perp execution path, which only runs when
+    spot_only is off (the escape hatch). The competition default is spot_only=True,
+    so flip it off for this file and restore after."""
+    old = settings.spot_only
+    settings.spot_only = False
+    yield
+    settings.spot_only = old
 
 
 def _live_executor():

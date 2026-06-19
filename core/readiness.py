@@ -55,12 +55,15 @@ def check_readiness() -> Dict[str, Any]:
         add("funds", "USDT for trading", usdt >= 5.0, f"{usdt:.2f} USDT",
             fix=f"send ~$45-60 of USDT (BSC) to {addr}")
 
-    # --- TWAK (optional: needed for PERPS + the special prize) ---
+    # --- TWAK (optional: in spot-only mode it's NOT needed to trade — spot routes
+    #     through the local web3 keystore. Only relevant for the TWAK special prize.) ---
+    spot_only = bool(getattr(settings, "spot_only", False))
+    twak_note = "TWAK special prize only — not needed to trade spot" if spot_only else "needed for perps + prize"
     twak_cli = shutil.which(settings.twak_bin) is not None
     twak_creds = bool((os.environ.get("TWAK_ACCESS_ID", settings.twak_access_id) or "").strip()
                       and (os.environ.get("TWAK_HMAC_SECRET", settings.twak_hmac_secret) or "").strip())
-    add("twak_cli", "TWAK CLI installed", twak_cli, optional=True, fix="npm i -g @trustwallet/cli")
-    add("twak_creds", "TWAK credentials (perps + prize)", twak_creds, optional=True,
+    add("twak_cli", "TWAK CLI installed", twak_cli, detail=twak_note, optional=True, fix="npm i -g @trustwallet/cli")
+    add("twak_creds", f"TWAK credentials ({twak_note})", twak_creds, optional=True,
         fix="run `twak setup`, paste TWAK_ACCESS_ID/HMAC into .env")
 
     # --- data providers ---
@@ -86,17 +89,21 @@ def check_readiness() -> Dict[str, Any]:
         detail=("yes" if registered else "no"), fix="POST /api/engine/register (or `twak compete register`)")
 
     # --- capability summary ---
+    spot_only = bool(getattr(settings, "spot_only", False))
     spot_live = connected and bool(addr) and bnb >= 0.003 and usdt >= 5.0
-    perps_live = spot_live and twak_cli and twak_creds
+    # In spot-only competition mode perps are disabled by design — never "ready".
+    perps_live = (not spot_only) and spot_live and twak_cli and twak_creds
 
     required = [c for c in checks if not c["optional"]]
     required_ok = sum(1 for c in required if c["ok"])
     return {
         "mode": mode,
+        "tradingVenue": "spot" if spot_only else "spot+perps",
+        "spotOnly": spot_only,
         "fundableAddress": addr,
         "capabilities": {
             "spotLive": spot_live,       # real on-chain spot via web3 — needs only a funded wallet
-            "perpsLive": perps_live,     # needs TWAK CLI + creds too
+            "perpsLive": perps_live,     # disabled in spot-only mode; else needs TWAK CLI + creds
             "simulation": True,          # always available
         },
         "requiredReady": f"{required_ok}/{len(required)}",

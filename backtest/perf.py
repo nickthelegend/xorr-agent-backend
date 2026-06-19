@@ -84,10 +84,12 @@ class override:
 
 async def simulate(cls, data: Dict[str, List[Candle]], regime_at, symbols: List[str],
                    leverage: float, sizing_pct: float, lo: int, hi: int, total_cap: float = 0.85,
-                   dd_halt: float = 18.0) -> Dict:
+                   dd_halt: float = 18.0, long_only: bool = False) -> Dict:
     """Shared-cash COMPOUNDING portfolio. margin = sizing_pct * equity per trade.
     dd_halt models the live drawdown circuit breaker: no NEW entries while the
-    portfolio is in drawdown > dd_halt (open positions still resolve)."""
+    portfolio is in drawdown > dd_halt (open positions still resolve).
+    long_only=True + leverage=1.0 turns this into a SPOT backtest (buy-the-flush
+    only, no shorts, no leverage) — the competition's actual constraints."""
     cash = 100.0; equity = 100.0; peak = 100.0; maxdd = 0.0
     open_pos: List[dict] = []
     trades: List[float] = []
@@ -164,6 +166,8 @@ async def simulate(cls, data: Dict[str, List[Candle]], regime_at, symbols: List[
                 sig = None
             if not sig:
                 continue
+            if long_only and getattr(sig, "direction", "long") == "short":
+                continue   # spot can't short — only the buy-the-flush side
             entry = arr[i].close
             used = sum(p["mg"] for p in open_pos)
             margin = min(sizing_pct * equity, total_cap * equity - used, cash)
@@ -241,18 +245,20 @@ async def tune(names, lev=5):
     return chosen
 
 
-async def report(names, lev=5):
+async def report(names, lev=5, long_only=False):
     """Proper train/test robustness: TUNE sizing on the first half (KNOWN), then
     apply that exact config to the unseen second half (UNKNOWN). Report ret/DD/Sharpe
-    for both halves so you can see which survive on data they were never fit to."""
+    for both halves so you can see which survive on data they were never fit to.
+    long_only=True + lev=1 reports the SPOT-only book (the competition's constraints)."""
     data, regime_at = await load()
     n = min(len(data[s]) for s in SYMBOLS if data[s]); half = n // 2
     sizings = [round(0.25 + 0.05 * k, 2) for k in range(15)]
     dd_halts = [12.0, 15.0]
-    print(f"\nROBUSTNESS — compounding portfolio across {len(SYMBOLS)} majors, lev={lev}x, {n} bars (~{DAYS}d 1h)")
+    venue = "SPOT (long-only, 1x)" if long_only else f"perp lev={lev}x"
+    print(f"\nROBUSTNESS — compounding portfolio across {len(SYMBOLS)} majors, {venue}, {n} bars (~{DAYS}d 1h)")
     print("KNOWN = first half (sizing tuned here) | UNKNOWN = second half (unseen, same config)\n")
-    print(f"{'strategy':28s} {'cfg':>10} | {'KNOWN ret%':>10} {'DD%':>6} {'Shrp':>5} | {'UNKNOWN ret%':>12} {'DD%':>6} {'Shrp':>5}  OOS-ok")
-    print("-" * 100)
+    print(f"{'strategy':28s} {'cfg':>10} | {'KNOWN ret%':>10} {'DD%':>6} {'Shrp':>5} {'win%':>5} | {'UNKNOWN ret%':>12} {'DD%':>6} {'Shrp':>5} {'win%':>5}  OOS-ok")
+    print("-" * 116)
     surv = 0
     for name in names:
         cls = STRATEGIES.get(name)
@@ -263,7 +269,7 @@ async def report(names, lev=5):
         for ddh in dd_halts:
             for sz in sizings:
                 with override(perp_symbols=",".join(SYMBOLS)):
-                    k = await simulate(cls, data, regime_at, SYMBOLS, lev, sz, 0, half, dd_halt=ddh)
+                    k = await simulate(cls, data, regime_at, SYMBOLS, lev, sz, 0, half, dd_halt=ddh, long_only=long_only)
                 if k["maxdd"] < 25.0 and k["n"] > 10 and (best is None or k["ret"] > best[2]["ret"]):
                     best = (sz, ddh, k)
         if best is None:
@@ -271,11 +277,11 @@ async def report(names, lev=5):
             continue
         sz, ddh, k = best
         with override(perp_symbols=",".join(SYMBOLS)):
-            u = await simulate(cls, data, regime_at, SYMBOLS, lev, sz, half, n, dd_halt=ddh)
+            u = await simulate(cls, data, regime_at, SYMBOLS, lev, sz, half, n, dd_halt=ddh, long_only=long_only)
         oos_ok = u["ret"] > 0 and u["maxdd"] < 35.0
         surv += 1 if oos_ok else 0
-        print(f"{name:28s} {f'{sz:.0%}/dd{ddh:.0f}':>10} | {k['ret']:+10.0f} {k['maxdd']:6.1f} {k['sharpe']:5.2f} | {u['ret']:+12.0f} {u['maxdd']:6.1f} {u['sharpe']:5.2f}  {'YES' if oos_ok else 'no'}")
-    print("-" * 100)
+        print(f"{name:28s} {f'{sz:.0%}/dd{ddh:.0f}':>10} | {k['ret']:+10.0f} {k['maxdd']:6.1f} {k['sharpe']:5.2f} {k['win']:5.0f} | {u['ret']:+12.0f} {u['maxdd']:6.1f} {u['sharpe']:5.2f} {u['win']:5.0f}  {'YES' if oos_ok else 'no'}")
+    print("-" * 116)
     print(f"OOS-positive on the UNKNOWN half: {surv}/{len([x for x in names if x in STRATEGIES])}")
 
 
@@ -283,6 +289,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--tune", action="store_true")
     ap.add_argument("--report", action="store_true")
+    ap.add_argument("--spot", action="store_true", help="SPOT-only book: long-only, 1x (competition constraints)")
     ap.add_argument("--sizing", type=float, default=0.45)
     ap.add_argument("--lev", type=int, default=5)
     ap.add_argument("--all", action="store_true")
@@ -290,5 +297,7 @@ if __name__ == "__main__":
     names = [k for k in STRATEGIES if "perp" in k] if args.all else BOOK
     if args.tune:
         asyncio.run(tune(PERF5))
+    elif args.spot:
+        asyncio.run(report(names, lev=1, long_only=True))
     else:
         asyncio.run(report(names, args.lev))

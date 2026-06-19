@@ -3,22 +3,37 @@
 **Competition:** BNB Hack: AI Trading Agent Edition (CoinMarketCap × Trust Wallet × BNB Chain)
 **Submit by:** June 21 · **Live trading:** June 22–28 · **Judged on:** total return, with a **~30% max-drawdown cap = disqualification**. Min **1 trade/day**, only the **149 eligible BEP-20 tokens** count, hold a non-zero in-scope balance at the start, keep a **>$1 portfolio** every hour.
 
-This agent is a **regime-adaptive long/short** system:
-- **Spot long book** (PancakeSwap via TWAK) — the proven `donchian_breakout` (+1.35R).
-- **Perp long/short book** (BSC perps via TWAK → Aster) — `donchian_perp`: **longs breakouts in confirmed uptrends, SHORTS breakdowns in confirmed downtrends.** This is what lets the agent **profit in a down week** instead of sitting in cash. Backtest (real data, 80d): adding shorts took the book from **+1.58% → +5.54%** at 3x with maxDD 6.5% (well under the 30% gate).
+> ⚠️ **SPOT ONLY.** This competition permits **spot trading only — no perpetuals.** The
+> agent runs in `SPOT_ONLY=true`: it trades long-only spot swaps on PancakeSwap and
+> **never opens a perp** (hard-guarded at the executor). No leverage → **no liquidation
+> risk at all**, so the 30% drawdown DQ gate is far easier to respect.
+
+This agent is a **regime-adaptive long-only spot** system. Its edge is **mean reversion —
+buying oversold liquidation flushes on the liquid majors and selling into the bounce:**
+- **Reversion book** (the proven `liq_*` / `adaptive_percentile_reversion` / `aroon_mr`
+  family) runs on ETH/BNB/XRP/DOGE/ADA/AVAX/LINK, taking only the **LONG (buy-the-dip)**
+  side as 1x spot. In a falling tape these stay flat (cash = capital preservation) rather
+  than catching a falling knife.
+- **Spot momentum/breakout book** (`donchian_breakout` ⭐, `trend_follow`, `capitulation`,
+  `whale_flow`, `news_catalyst`) for up-trending tape.
+- **Honest trade-off vs the old long/short perp design:** dropping shorts + leverage lowers
+  the return ceiling (single-digit % over a week, not the leveraged numbers) but removes
+  blow-up risk entirely. We optimize for *return within the DQ gate*, not raw upside.
 
 ---
 
-## Two ways to go live (important)
-The agent has **two** independent on-chain execution paths:
-1. **Spot via web3 keystore — needs ONLY a funded wallet, no TWAK creds.** The agent
-   signs real PancakeSwap V2 swaps locally. Fund the wallet → switch to LIVE → it
-   trades the spot book on-chain. (Verified: BSC connects, real PancakeSwap quotes work.)
-2. **Perps via TWAK CLI — needs TWAK creds too.** The long/short perp book (and the
-   special prize) require `TWAK_ACCESS_ID`/`HMAC` from `twak setup`.
+## Going live (spot — simple)
+Spot needs **only a funded wallet — no TWAK creds.** The agent signs real PancakeSwap V2
+swaps locally from `data_store/agent_keystore.json`. Fund the wallet → switch to LIVE → it
+trades the spot reversion + momentum book on-chain. (Verified: BSC connects, real
+PancakeSwap quotes work.)
 
-The **Wallet page → GO-LIVE READINESS** panel (and `GET /api/readiness`) shows a live
-checklist of exactly what's done and what's missing for each path. Use it.
+> TWAK is now **optional** — it is *not* required to trade in spot-only mode. It only
+> matters if you also want to chase the **TWAK special prize** (you can route the same spot
+> swaps through `twak swap` instead of the web3 keystore). Perps are disabled regardless.
+
+The **Wallet page → GO-LIVE READINESS** panel (and `GET /api/readiness`, now reporting
+`tradingVenue: "spot"`) shows a live checklist of exactly what's done and what's missing.
 
 ## 0. One-time machine setup (do this before June 21)
 
@@ -40,18 +55,18 @@ python -m venv .venv && . .venv/Scripts/activate   # Windows: .venv\Scripts\acti
 pip install -r requirements.txt
 ```
 
-`.env` (copy from `.env.example`) — the lines that matter for LIVE + perps:
+`.env` (copy from `.env.example`) — the lines that matter for LIVE (spot-only):
 ```
-TWAK_PASSWORD=<your wallet password>
-TWAK_ACCESS_ID=<from twak setup>      # REQUIRED for perps + the TWAK prize
-TWAK_HMAC_SECRET=<from twak setup>    # REQUIRED for perps
+SPOT_ONLY=true                        # competition is spot-only; perps hard-disabled
+ENABLE_PERPS=false
 CMC_API_KEY=<your CMC Pro key>
 GROQ_API_KEY=<your Groq key>
-ENABLE_PERPS=true
-PERP_LEVERAGE=3.0                     # 2–5x; start at 3
 START_MODE=simulation                 # flip to live only after the checks below
+# TWAK is OPTIONAL in spot-only mode (only for the special prize):
+# TWAK_PASSWORD / TWAK_ACCESS_ID / TWAK_HMAC_SECRET=<from twak setup>
 ```
-> Without `TWAK_ACCESS_ID`/`TWAK_HMAC_SECRET` the agent still trades **spot** (local web3 keystore) but **perps are disabled** — you'd lose the down-market edge AND the TWAK special-prize story. Set them.
+> In spot-only mode TWAK creds are **not needed to trade** — spot signs through the local
+> web3 keystore. Set them only if you also want to pursue the TWAK special prize.
 
 ---
 
@@ -65,24 +80,18 @@ Then submit your **agent wallet address** + a short strategy explainer on DoraHa
 
 ## 2. Fund the agent wallet (~$50–70)
 
-Send to the `twak wallet address` from step 0:
-- **~$8–12 in BNB** for gas (PancakeSwap swaps + perp txs).
-- **~$45–60 in USDT** (BSC, contract `0x55d3…7955`) for trading + perp margin.
+Send to your agent wallet address (Wallet page → fundable address, or `twak wallet address` if using TWAK):
+- **~$8–12 in BNB** for gas (PancakeSwap swaps).
+- **~$45–60 in USDT** (BSC, contract `0x55d3…7955`) for trading.
 - You must hold a **non-zero in-scope balance at the start** — keep most of it in USDT (in-scope) so hour-0 isn't a 0.
 
 Set the sim baseline to match so paper PnL is representative: `SIM_START_USDT` ≈ your USDT.
 
-## 3. ⚠️ Verify perp `--usd` semantics with ONE dust perp (do this once, LIVE)
+## 3. ✅ No perp verification needed (spot-only)
 
-The CLI's `twak perps open … --usd <X>` is treated by this agent as **margin** (`PERP_USD_IS_MARGIN=true`). Confirm your CLI build agrees before sizing up:
-
-```bash
-twak perps open ETH --side long --usd 1 --leverage 2 --chain bsc
-twak perps positions --chain bsc     # read the notional/size it actually opened
-twak perps close ETH --chain bsc
-```
-- If the opened **notional ≈ $2** (1 margin × 2x) → leave `PERP_USD_IS_MARGIN=true`. ✅
-- If the opened **notional ≈ $1** (i.e. `--usd` WAS the notional) → set `PERP_USD_IS_MARGIN=false`.
+The old dust-perp `--usd`-semantics check **does not apply** — the agent never opens a perp
+(`SPOT_ONLY=true`, and `open_perp` fails closed). There is **no leverage and no liquidation
+risk** to verify. Spot swaps are the proven, already-verified path. Skip straight to go-live.
 
 ## 4. Go live
 
@@ -90,22 +99,27 @@ twak perps close ETH --chain bsc
 python run.py
 ```
 - Open the dashboard (frontend `npm run dev`, default `http://localhost:3000`).
-- Confirm the **Wallet** page shows your real funded address and balances.
+- Confirm the **Wallet** page shows your real funded address and balances, and **GO-LIVE
+  READINESS** reads `tradingVenue: spot`.
 - Toggle **Simulation → Live** in the header (it double-confirms).
-- Watch the **Live Log**: you should see scans, a daily qualifier round-trip, and (in trending tape) spot/perp entries. Perp rows show a `LONG 3x` / `SHORT 3x` badge + liquidation price.
+- Watch the **Live Log**: scans, a daily qualifier round-trip, and (in the right tape) spot
+  `BUY` entries from the reversion + breakout book. Every row is a 1x **SPOT** swap — no
+  leverage badge, no liquidation price.
 
 ---
 
 ## 5. What protects you (the DQ gate)
 
+Spot-only removes the entire leverage/liquidation failure mode, so the DQ gate is much
+easier to hold. What's left:
+
 | Guard | Setting | Effect |
 |---|---|---|
-| Per-perp margin cap | `PERP_MARGIN_PCT_PER_TRADE=0.12` | one perp ≤ 12% of equity |
-| Total perp margin cap | `PERP_TOTAL_MARGIN_PCT=0.30` | all perps ≤ 30% of equity |
-| Conservative leverage | `PERP_LEVERAGE=3` | liquidation ~33% away; strategy stops exit at ~3% |
-| Liquidation guard | `PERP_LIQ_GUARD_PCT=6` | force-close if mark gets within 6% of liquidation |
+| **No leverage / no liquidation** | `SPOT_ONLY=true` | you own the token outright; worst case is the asset's own drawdown, never a wipeout |
+| Per-trade size cap | `BASE_TRADE_SIZE_USD` × confidence/F&G/DD | each spot buy is a small fraction of equity |
+| Long-only discipline | reversion fires only in TREND_UP/CHOP | in a falling tape the book sits in USDT (cash) instead of buying the knife |
 | Drawdown ladder | scales size down from 10% DD, stops new risk by ~18% |
-| **Soft de-risk** | `FLATTEN_DRAWDOWN_PCT=22` | flatten + pause new entries 2h; **qualifier keeps running** (daily rule kept) |
+| **Soft de-risk** | `FLATTEN_DRAWDOWN_PCT=22` | flatten to USDT + pause new entries 2h; **qualifier keeps running** (daily rule kept) |
 | **Hard halt** | `DQ_DRAWDOWN_PCT=30` (halts at 27%) | flatten + halt — never reach the 30% DQ cliff |
 
 These keep worst-case drawdown comfortably under the 30% disqualification cap while staying deployed for return.

@@ -3,6 +3,9 @@ perp-position lister, and scheduler liveness/health."""
 import asyncio
 from decimal import Decimal
 
+import pytest
+
+from config import settings
 from persistence.db import init_db
 from core import sim_ledger
 from core.twak_executor import TwakExecutor
@@ -14,7 +17,17 @@ def _sim_executor():
     return TwakExecutor(simulation=True)
 
 
-def test_funding_carry_reduces_proceeds_over_time():
+@pytest.fixture
+def perps_enabled():
+    """Flip off the spot-only competition default so the perp execution path
+    (the escape hatch) can be exercised, then restore it."""
+    old = settings.spot_only
+    settings.spot_only = False
+    yield
+    settings.spot_only = old
+
+
+def test_funding_carry_reduces_proceeds_over_time(perps_enabled):
     ex = _sim_executor()
     # open $7 margin 3x long ETH @100 -> 0.21 notional units
     r = asyncio.run(ex.open_perp("ETH", "long", Decimal("7"), 3.0, ref_price=100.0))

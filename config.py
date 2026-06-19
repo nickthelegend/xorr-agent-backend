@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     enable_strategy_whale_flow: bool = Field(default=True)
     enable_strategy_donchian_breakout: bool = Field(default=True)    # +1.35R star (spot long)
     enable_strategy_donchian_perp: bool = Field(default=False)       # -> shadow: failed comm2x (dies at 2x cost)
-    enable_strategy_salamander_perp: bool = Field(default=True)      # long/short perp pullbacks — best shorts (+0.55R)
+    enable_strategy_salamander_perp: bool = Field(default=False)     # DISABLED for spot-only: its edge was SHORTING rallies; long-only it loses (spot backtest -2%/-6% OOS)
     enable_strategy_supertrend_perp: bool = Field(default=False)     # marginal (+0.04R); available, off by default
     enable_strategy_rsi_reversion: bool = Field(default=False)       # -0.52R
     enable_strategy_xsect_momentum: bool = Field(default=True)
@@ -155,8 +155,16 @@ class Settings(BaseSettings):
     volsq_tp_atr: float = Field(default=3.5)
     rsi_div_lookback: int = Field(default=20)
 
+    # --- Trading venue (HACKATHON: SPOT ONLY) ---
+    # The competition allows spot trading only — no perps. In spot_only mode the
+    # proven "*_perp" reversion strategies still run as SIGNAL SOURCES on the liquid
+    # majors, but only their LONG side is taken and it executes as a 1x spot swap
+    # (PancakeSwap via web3 — no TWAK, no leverage, no liquidation risk). Set
+    # spot_only=False only if a future event permits perps.
+    spot_only: bool = Field(default=True)
+
     # --- Perpetual futures (BSC perps via TWAK -> Aster/Hyperliquid) ---
-    enable_perps: bool = Field(default=True)                 # master switch for the perp book
+    enable_perps: bool = Field(default=False)                # perp EXECUTION path — off for the spot-only competition
     # (enable_strategy_donchian_perp lives with the other strategy enables below)
     # Liquid majors traded as perps (long & short). Intersected at runtime with the
     # 149 eligible list AND the tokens that have Binance klines for signals.

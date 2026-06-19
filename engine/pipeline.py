@@ -31,6 +31,22 @@ from persistence.models import Position, Trade, RuntimeState
 from persistence.repo import add_position, add_trade, get_state
 from strategies.arbiter import arbiter
 
+def enforce_spot_only(signals: list) -> list:
+    """Spot-only guard: drop SHORT signals (can't short spot) and force every
+    remaining signal to a 1x spot long. Idempotent — spot signals pass through
+    unchanged. The single chokepoint guaranteeing no short/leveraged order can
+    reach execution in the spot-only competition."""
+    out = []
+    for s in signals:
+        if getattr(s, "direction", "long") == "short":
+            continue
+        s.venue = "spot"
+        s.leverage = 1.0
+        s.direction = "long"
+        out.append(s)
+    return out
+
+
 def _perp_universe(ctx: MarketContext) -> list:
     """Liquid majors we trade as perps: the configured perp_symbols that (a) have
     a live quote this tick and (b) resolve to a known/eligible token. The strategy
@@ -246,6 +262,32 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
             except Exception as e:
                 print(f"[ENGINE ERROR] Strategy '{strat.name}' crashed evaluating {symbol}: {e}")
 
+    # 7b-spot. SPOT-ONLY (competition): the "*_perp" reversion strategies are our
+    #     spot mean-reversion edge. Run them on the liquid majors but take only the
+    #     LONG side (can't short spot) and execute as 1x spot swaps — no TWAK, no
+    #     leverage, no liquidation risk, no funding-fade. Longs fire on down-flushes
+    #     in TREND_UP/CHOP; in a falling tape they stay flat (capital preservation).
+    spot_only = bool(getattr(settings, "spot_only", False))
+    if spot_only and perp_strats:
+        for symbol in _perp_universe(ctx):
+            quote = ctx.quotes.get(symbol.upper())
+            if not quote or is_blacklisted(session, symbol):
+                continue
+            if not await passes_cex_sanity(symbol, quote.price):
+                continue
+            candles_5m = await fetch_binance_klines(symbol, "5m", limit=35)
+            candles_1h = await fetch_binance_klines(symbol, "1h", limit=80)
+            for strat in perp_strats:
+                try:
+                    sig = await strat.evaluate(symbol, candles_5m, candles_1h, ctx)
+                except Exception as e:
+                    print(f"[ENGINE ERROR] Reversion strategy '{strat.name}' crashed on {symbol}: {e}")
+                    continue
+                if not sig or getattr(sig, "direction", "long") != "long":
+                    continue   # spot can't short — only the buy-the-flush side
+                sig.venue = "spot"; sig.leverage = 1.0; sig.direction = "long"
+                raw_signals.append(sig)
+
     # 7b. PERP book: evaluate the liquid majors DIRECTLY, bypassing the long-biased
     #     candidate gates (whale-flow / confluence) so a breakdown SHORT in a falling
     #     tape is actually seen. CEX-sanity + cooldown still apply.
@@ -257,7 +299,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
     perps_live_ok = executor.simulation or executor._twak_ready()
     if not perps_live_ok:
         perp_strats = []
-    if settings.enable_perps and (perp_strats or shadow_perp):
+    if (not spot_only) and settings.enable_perps and (perp_strats or shadow_perp):
         existing_shadow = {(p.strategy, p.symbol.upper()) for p in open_pos if getattr(p, "is_shadow", False)}
         n_shadow = sum(1 for p in open_pos if getattr(p, "is_shadow", False))
         for symbol in _perp_universe(ctx):
@@ -318,6 +360,11 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
                 add_position(session, spos)
                 existing_shadow.add((f"shadow_{name}", symbol.upper())); n_shadow += 1
                 await log_engine_msg(session, "info", f"[shadow] {name} {ssig.direction} {symbol} paper-opened @ ${entry:.4f}")
+
+    # Spot-only safety net: guarantee nothing short or leveraged reaches execution,
+    # regardless of which strategy produced the signal.
+    if spot_only:
+        raw_signals = enforce_spot_only(raw_signals)
 
     if not raw_signals:
         await log_engine_msg(session, "info", "[bot] No technical signals triggered. Scan complete.")

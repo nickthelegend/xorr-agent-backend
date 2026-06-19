@@ -445,6 +445,13 @@ class TwakExecutor:
         direction = "short" if str(direction).lower() == "short" else "long"
         margin_f = float(margin_usd)
 
+        # Hard safety: in the spot-only competition we NEVER open a perp, even if a
+        # perp signal somehow reaches here. Fail closed.
+        if bool(getattr(self.settings, "spot_only", False)):
+            return ExecutionResult(success=False, tx_hash="", executed_price=0.0,
+                                   amount_in=margin_f, amount_out=0.0, status="reverted",
+                                   error="spot_only mode: perp trading is disabled")
+
         if self.simulation:
             sim_ledger.ensure_seeded()
             price = float(ref_price) if ref_price and ref_price > 0 else self._lookup_sim_price(symbol, symbol)
