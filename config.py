@@ -119,6 +119,19 @@ class Settings(BaseSettings):
     enable_strategy_tsi_mr_perp: bool = Field(default=False)        # OOS+ but fails comm2x -> shadow
     enable_strategy_uo_mr_perp: bool = Field(default=False)         # OOS+ but fails comm2x -> shadow
     enable_strategy_aroon_mr_perp: bool = Field(default=True)       # ENABLED: survived gauntlet (OOS+, 5/5, comm2x+)
+    # broader trader.dev spot ports (enable decided by --spot backtest)
+    enable_strategy_stochrsi_mr_perp: bool = Field(default=True)    # ENABLED: spot OOS+ (KNOWN +49 / UNKNOWN +8, win 52-55%)
+    enable_strategy_adx_trend_perp: bool = Field(default=False)     # shadow: spot OOS+ but inconsistent (KNOWN +1)
+    enable_strategy_bb_breakout_perp: bool = Field(default=False)   # shadow: fails spot OOS (-13% unseen, breakout overfits)
+    stochrsi_rsi_len: int = Field(default=14)
+    stochrsi_stoch_len: int = Field(default=14)
+    stochrsi_oversold: float = Field(default=0.2)
+    stochrsi_overbought: float = Field(default=0.8)
+    adx_len: int = Field(default=14)
+    adx_threshold: float = Field(default=25.0)
+    bb_break_len: int = Field(default=10)
+    bb_break_mult: float = Field(default=1.5)
+    bb_break_ema: int = Field(default=50)
     tsi_entry_thresh: float = Field(default=25.0)
     uo_oversold: float = Field(default=35.0)
     uo_overbought: float = Field(default=65.0)
@@ -145,7 +158,7 @@ class Settings(BaseSettings):
     # (the 5 continuation ideas were negative -> left disabled; 2 marginal -> shadow below)
     # Registered-but-disabled strategies that run as SHADOW (paper) live; the arbiter
     # auto-promotes any whose shadow expectancy proves out (>=8 trades, >0.25R).
-    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp,liq_divergence_fade_perp,liq_failed_breakdown_perp,donchian_perp,burst_scalper_perp,adaptive_percentile_momentum_perp,cascade_consec_perp,zscore_advol_perp,volume_momentum_perp,adaptive_p99_momentum_perp,tsi_mr_perp,uo_mr_perp")
+    shadow_test_strategies: str = Field(default="supertrend_perp,volsqueeze_perp,rsi_div_perp,liq_zscore_perp,liq_relspike_perp,macd_regime_perp,liq_macd_momentum_perp,macd_liq_reversal_perp,liq_divergence_fade_perp,liq_failed_breakdown_perp,donchian_perp,burst_scalper_perp,adaptive_percentile_momentum_perp,cascade_consec_perp,zscore_advol_perp,volume_momentum_perp,adaptive_p99_momentum_perp,tsi_mr_perp,uo_mr_perp,adx_trend_perp,bb_breakout_perp")
     # geektrade vol-squeeze (BB inside KC + volume), exact published params
     volsq_len: int = Field(default=20)
     volsq_bb_mult: float = Field(default=2.0)

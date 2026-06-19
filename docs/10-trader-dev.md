@@ -121,3 +121,43 @@ two that were close. Nothing was enabled on the strength of someone else's Sharp
 > Reproduce: `python -m backtest.robustness --all` (gauntlet) — `aroon_mr_perp` shows `YES`,
 > `tsi_mr_perp` / `uo_mr_perp` show `no`. Unit coverage:
 > `python -m pytest tests/test_oscillator_mr.py -q`.
+
+---
+
+## 7. Second pass — the BROADER survey, scored for SPOT
+
+After the spot-only pivot we went back for **all** the strategies, not just the top-3
+oscillators, specifically asking *"which can be implemented as long-only spot?"* We pulled
+**283 distinct strategies** across four sort orders (sharpe/profit/sortino/winrate).
+
+**What the broad population actually looks like** (keyword tally on names): EMA 96 ·
+breakout 77 · MACD 33 · ADX 24 · RSI 16 · mean/reversion 19 · stoch 7. So the bulk is
+**trend/breakout**, whose *long* side is spot-viable — the opposite skew from the Sharpe-only
+top (which was pure mean-reversion).
+
+**Two hard filters killed most of it:**
+1. **Off-instrument.** The top-Sharpe board is dominated by **XAUUSD (gold) / PAXG / forex**
+   session-breakouts (Sharpe 36–45 — in-sample fantasy) that we *cannot trade* (not BEP-20).
+2. **Overfit parameter soup.** The top *crypto* names are `Evo_ETHUSDT_Gen16`, `…_Gen35`,
+   etc. — genetically-evolved indicator combos with 1–4% return and 0.4–1% drawdown over
+   tiny windows. Not portable archetypes, just tuned coefficient sets.
+
+**The genuinely new, crypto, long-spot-viable archetypes we didn't already have** → ported
+into [`strategies/spot_ports.py`](../strategies/spot_ports.py), then run through our `--spot`
+(long-only, 1×) KNOWN/UNKNOWN backtest:
+
+| Port | Source | KNOWN | UNKNOWN | Verdict |
+|---|---|--:|--:|---|
+| `stochrsi_mr_perp` | StochRSI MR (ADA/ETH/NEAR 4h, win 65–80%) | +49% | **+8%** | ✅ **ENABLED** — clean new MR archetype, holds OOS |
+| `adx_trend_perp` | ADX/DMI trend (clean reimpl of a Sharpe-0.43 mess) | +1% | +9% | 🟡 **SHADOW** — OOS+ but inconsistent |
+| `bb_breakout_perp` | "BB Breakout Opt" (ETH 1h) | +11% | **−13%** | ❌ **SHADOW** — fails OOS (breakout overfits) |
+
+**The lesson repeats a 10th time:** the *mean-reversion* port (`stochrsi_mr`) survives
+out-of-sample; the *breakout/momentum* port (`bb_breakout`) overfits and dies on unseen
+data; the *trend* port (`adx_trend`) only squeaks through. We enabled the one MR winner,
+shadowed the rest. Most of trader.dev's "best" simply **can't be traded by us** (gold/forex)
+or **isn't a real edge** (evolved overfit) — and our `--spot` re-test, not their Sharpe, made
+the call.
+
+> Reproduce: `python -X utf8 -m backtest.perf --spot --all` (look for the three `*_perp`
+> rows above). Unit coverage: `python -m pytest tests/test_spot_ports.py -q`.
