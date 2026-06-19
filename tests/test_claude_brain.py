@@ -114,3 +114,44 @@ def test_to_signals_makes_spot_longs():
     assert s.direction == "long" and s.venue == "spot" and s.leverage == 1.0
     assert s.strategy_name == "claude:liq_reversion_perp" and s.symbol == "ETH"
     assert s.contract  # resolved to an on-chain contract
+
+
+def _ctx_with(price, regime="CHOP"):
+    from core.types import Quote
+    q = Quote(symbol="ETH", price=price, pct_1h=0, pct_24h=0, volume_24h=1e7,
+              market_cap=1e9, last_updated=datetime.now(timezone.utc))
+    return MarketContext(timestamp=datetime.now(timezone.utc), fear_greed_value=50,
+        fear_greed_label="N", btc_dominance=55.0, total_market_cap_usd=2.5e12,
+        total_market_cap_change_24h=0.0, bnb_price_usd=600.0, regime=regime,
+        quotes={"ETH": q})
+
+
+_REV_PB = {"regime": "CHOP", "picks": [{"symbol": "ETH", "strategy": "liq_reversion_perp",
+           "conviction": 0.8, "entry_price": 2900.0, "invalidation_price": 2700.0, "reason": "dip"}]}
+
+
+def test_trigger_fires_when_reversion_dips_into_zone():
+    with patch("claude.playbook.get_playbook", return_value=_REV_PB):
+        sigs = playbook.triggered_signals(_ctx_with(2890.0))   # <= entry, > invalidation
+    assert len(sigs) == 1 and sigs[0].symbol == "ETH" and sigs[0].direction == "long"
+
+
+def test_trigger_waits_when_price_above_reversion_zone():
+    with patch("claude.playbook.get_playbook", return_value=_REV_PB):
+        sigs = playbook.triggered_signals(_ctx_with(2960.0))   # above the dip level -> wait
+    assert sigs == []
+
+
+def test_trigger_skips_when_invalidated():
+    with patch("claude.playbook.get_playbook", return_value=_REV_PB):
+        sigs = playbook.triggered_signals(_ctx_with(2650.0))   # broke support -> falling knife
+    assert sigs == []
+
+
+def test_breakout_trigger_blocked_in_downtrend():
+    pb = {"regime": "TREND_DOWN", "picks": [{"symbol": "ETH", "strategy": "donchian_breakout",
+          "conviction": 0.8, "entry_price": 3000.0, "invalidation_price": 2900.0, "reason": "break"}]}
+    with patch("claude.playbook.get_playbook", return_value=pb):
+        up = playbook.triggered_signals(_ctx_with(3010.0, regime="TREND_UP"))    # break + uptrend -> fire
+        down = playbook.triggered_signals(_ctx_with(3010.0, regime="TREND_DOWN"))  # don't chase in downtrend
+    assert len(up) == 1 and down == []

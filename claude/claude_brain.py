@@ -94,14 +94,22 @@ def _build_user_prompt(watchlist: dict, max_picks: int) -> str:
             "rules": [
                 "LONG spot only — every pick is a BUY.",
                 "strategy MUST be exactly one 'name' from enabled_strategies.",
-                "conviction is 0.0-1.0; only include setups you would actually buy now.",
+                "conviction is 0.0-1.0.",
                 "Match strategy.type to the setup (reversion vs breakout/trend).",
-                "Fewer, higher-quality picks beat many marginal ones.",
+                "These are ALERTS, not market buys: set entry_price to the level you want to "
+                "BUY at, and the bot waits for price to reach it. For reversion (type=reversion) "
+                "entry_price is a DIP at or below the current price (buy the flush). For "
+                "breakout/trend, entry_price is ABOVE current price (buy the break). Use the "
+                "coin's price, range_pos and atr_pct to set a realistic level.",
+                "invalidation_price is the level that KILLS the idea — below support for "
+                "reversion, a failed-breakout level for breakouts. If price hits it first, no trade.",
+                "Fewer, higher-quality picks beat many marginal ones; it is fine to return none.",
             ],
             "output_schema": {
                 "market_view": "one sentence on the tape",
                 "picks": [{"symbol": "TICKER", "strategy": "exact_menu_name",
-                           "conviction": 0.0, "reason": "short"}],
+                           "conviction": 0.0, "entry_price": 0.0, "invalidation_price": 0.0,
+                           "reason": "short"}],
                 "avoid": ["TICKER", "..."],
             },
         },
@@ -175,8 +183,16 @@ def _fallback_playbook(watchlist: dict, max_picks: int, min_conv: float) -> dict
         conv = r["reversion_score"] if is_rev else r["breakout_score"]
         if not strat or conv < min_conv:
             continue
+        price = float(r.get("price", 0)) or 0.0
+        if is_rev:
+            entry = round(price * 0.985, 8)   # buy a ~1.5% dip into the flush
+            invalid = round(price * 0.95, 8)  # bail if it breaks ~5% lower (falling knife)
+        else:
+            entry = round(price * 1.01, 8)    # buy a ~1% break up
+            invalid = round(price * 0.985, 8) # failed breakout
         picks.append({"symbol": r["symbol"], "strategy": strat,
                       "conviction": round(conv, 2),
+                      "entry_price": entry, "invalidation_price": invalid,
                       "reason": ("oversold flush" if is_rev else "upside breakout") +
                                 f" (rsi {r['rsi']:.0f}, ret4h {r['ret_4h']:.1f}%, volx {r['vol_spike']:.1f})"})
     return {"market_view": f"deterministic fallback ({regime})", "picks": picks,
@@ -187,6 +203,13 @@ def _validate(pb: dict, watchlist: dict, max_picks: int, min_conv: float) -> dic
     """Keep only well-formed picks on enabled strategies / scanned symbols."""
     menu = {m["name"] for m in _strategy_menu()}
     syms = {r["symbol"] for r in watchlist.get("ranked", [])}
+    def _num(x):
+        try:
+            v = float(x)
+            return v if v > 0 else None
+        except Exception:
+            return None
+
     clean = []
     for p in (pb.get("picks") or []):
         try:
@@ -197,6 +220,8 @@ def _validate(pb: dict, watchlist: dict, max_picks: int, min_conv: float) -> dic
             continue
         if strat in menu and conv >= min_conv and len(clean) < max_picks:
             clean.append({"symbol": sym, "strategy": strat, "conviction": round(conv, 2),
+                          "entry_price": _num(p.get("entry_price")),
+                          "invalidation_price": _num(p.get("invalidation_price")),
                           "reason": str(p.get("reason", ""))[:200]})
     pb["picks"] = clean
     pb["avoid"] = [str(a).upper() for a in (pb.get("avoid") or [])][:20]

@@ -110,3 +110,74 @@ def to_signals(ctx: MarketContext) -> List[Signal]:
             strategy_name=f"claude:{strat}", direction="long", venue="spot", leverage=lev,
         ))
     return out
+
+
+def triggered_signals(ctx: MarketContext) -> List[Signal]:
+    """Tier 2: which of Claude's watched picks have their entry ALERT triggered right now.
+
+    For each pick, check the live price vs the entry zone + invalidation level + the market
+    regime; emit a spot-long signal only for the ones that just came into play. This is the
+    deterministic 'price reached -> analyse trend -> trade by strength' step — no Claude call.
+    """
+    from claude.claude_brain import _classify
+    pb = get_playbook()
+    if not pb:
+        return []
+    regime = getattr(ctx, "regime", "CHOP")
+    open_syms = {p.symbol.upper() for p in (ctx.open_positions or [])}
+    out = []
+    for p in pb.get("picks", []):
+        try:
+            sym = str(p["symbol"]).upper()
+            strat = str(p["strategy"])
+            conf = float(p.get("conviction", 0))
+        except Exception:
+            continue
+        if sym in open_syms:
+            continue
+        q = (ctx.quotes or {}).get(sym)
+        if not q or not q.price:
+            continue
+        price = float(q.price)
+        entry = p.get("entry_price")
+        invalid = p.get("invalidation_price")
+        typ, _ = _classify(strat)
+
+        # invalidation: idea is dead, never trigger
+        if invalid:
+            if typ in ("breakout", "trend") and price <= invalid:
+                continue
+            if typ not in ("breakout", "trend") and price <= invalid:
+                continue  # reversion: broke support -> falling knife, skip
+
+        # trend gate at the trigger (the 'analyse the trend' step, deterministic)
+        if typ in ("breakout", "trend") and regime in ("TREND_DOWN", "RISK_OFF"):
+            continue  # don't chase breakouts into a downtrend
+
+        # entry zone reached?
+        if entry is None:
+            triggered = True                       # no level set -> enter at market
+        elif typ in ("breakout", "trend"):
+            triggered = price >= entry             # broke up into the zone
+        else:
+            triggered = price <= entry             # dipped into the buy zone
+        if not triggered:
+            continue
+
+        t = resolve(sym)
+        if not t or not t.contract:
+            continue
+        sl, tp = _sl_tp(strat)
+        # signal strength: conviction, nudged up when deeper into a reversion zone
+        strength = conf
+        if entry and typ not in ("breakout", "trend") and price < entry:
+            strength = min(0.97, conf + min(0.15, (entry - price) / entry * 2.0))
+        out.append(Signal(
+            symbol=sym, contract=t.contract, side="buy",
+            confidence=max(0.05, min(0.97, strength)),
+            stop_loss_pct=sl, take_profit_pct=tp, max_hold_min=480,
+            rationale=f"[Claude alert · {strat}] price {price:.6g} entered zone (entry={entry}); "
+                      f"{str(p.get('reason',''))[:120]}",
+            strategy_name=f"claude:{strat}", direction="long", venue="spot", leverage=1.0,
+        ))
+    return out

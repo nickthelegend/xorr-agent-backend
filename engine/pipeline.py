@@ -370,17 +370,18 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
     if spot_only:
         raw_signals = enforce_spot_only(raw_signals)
 
-    # Claude decision brain (subscription CLI): inject the current playbook's picks as
-    # spot-long signals. They're force-entered below (Claude decides, not the Groq council).
+    # Claude decision brain (subscription CLI): Claude sets the watchlist + entry alerts
+    # every 4h; here we check which alerts the LIVE price just triggered and enter those
+    # (deterministic — no per-tick Claude call). Force-entered below (Claude decides, not Groq).
     if bool(getattr(settings, "enable_claude_brain", False)):
         try:
-            from claude.playbook import to_signals as _claude_to_signals
-            cs = _claude_to_signals(ctx)
+            from claude.playbook import triggered_signals as _claude_triggers
+            cs = _claude_triggers(ctx)
             if cs:
                 raw_signals.extend(cs)
-                await log_engine_msg(session, "info", f"[claude] {len(cs)} playbook pick(s) added to this scan.")
+                await log_engine_msg(session, "info", f"[claude] {len(cs)} alert(s) triggered this scan -> entering.")
         except Exception as e:
-            print(f"[CLAUDE] playbook signals skipped: {e}")
+            print(f"[CLAUDE] alert check skipped: {e}")
 
     if not raw_signals:
         await log_engine_msg(session, "info", "[bot] No technical signals triggered. Scan complete.")

@@ -6,27 +6,41 @@ The Groq LLM council was the weak link — it gated real signals with mushy scor
 layer replaces it with **Claude as the actual trade decision-maker**, driven by your
 **Claude Pro/Max subscription** (not a metered API key).
 
-## How it works
+## How it works — two tiers (plan, then trigger)
 
 ```
-every 4h ──▶ watchlist_agent ──▶ features ──▶ claude_brain ──▶ playbook ──▶ pipeline
-            (scan ~70 coins)   (score each)  (Claude picks)   (cache 4h)  (force-enter)
+TIER 1 — every 4h (Claude, ~6 calls/day):
+  watchlist_agent ─▶ features ─▶ claude_brain ─▶ playbook (cached 4h)
+  (scan ~70 coins) (score each) (pick + ENTRY + INVALIDATION levels)
+
+TIER 2 — every 60s scan (deterministic, free):
+  live price ─▶ triggered_signals ─▶ pipeline force-enter
+  (in the entry zone + trend agrees?) (size by signal strength)
 ```
 
-1. **`claude/watchlist_agent.py`** scans the eligible BEP-20 universe (~70 coins), pulling
-   1h klines for each (bounded concurrency) and ranking by opportunity score.
-2. **`claude/features.py`** computes per-coin technical features — **volume spike** (vs 20-bar
-   avg), **ATR %** + **ATR expansion** (the volatility gap = breakout fuel), **4h/24h
-   momentum**, **RSI**, **stretch from EMA20**, **position in the 48-bar range** — plus two
-   derived archetype scores (`reversion_score`, `breakout_score`).
-3. **`claude/claude_brain.py`** hands the scored watchlist + the market regime + our **enabled
-   strategy menu** to Claude and gets back a structured **playbook**: which coins to play, the
-   best-fit strategy for each (it matches `reversion` strategies to oversold flushes,
-   `breakout`/`trend` to upside thrust), a conviction (0–1), and a reason.
-4. **`claude/playbook.py`** caches the playbook (in-memory + JSON, ~4h TTL) and converts the
-   picks into spot **long** signals.
-5. **The pipeline** injects those signals each scan and **force-enters** them — Claude's picks
-   bypass the Groq council entirely (Claude already decided).
+**Tier 1 — Claude sets the plan (every 4h):**
+1. **`watchlist_agent.py`** scans the eligible BEP-20 universe (~70 coins), pulling 1h klines
+   (bounded concurrency) and ranking by opportunity score.
+2. **`features.py`** computes per-coin features — **volume spike**, **ATR %** + **ATR
+   expansion** (the volatility gap = breakout fuel), **4h/24h momentum**, **RSI**, **stretch
+   from EMA20**, **range position** — plus `reversion_score` / `breakout_score`.
+3. **`claude_brain.py`** hands the scored board + regime + our **enabled strategy menu** to
+   Claude, which returns a **playbook of ALERTS**: per pick — the best-fit strategy, an
+   **entry_price** (the level to buy at: a dip below current for reversion, a break above for
+   breakout), an **invalidation_price** (kills the idea), a conviction, and a reason.
+4. **`playbook.py`** caches it (in-memory + JSON, ~4h TTL).
+
+**Tier 2 — the cheap loop pulls the trigger (every 60s scan):**
+5. `triggered_signals(ctx)` checks each watched pick's **live price** against its entry zone +
+   invalidation + the **market regime** (don't chase a breakout into a downtrend; skip a
+   reversion that broke support). Only the alerts that just came into play become spot-long
+   signals, **sized by signal strength** (conviction, nudged up deeper into a reversion zone).
+   The pipeline **force-enters** them — Claude's plan bypasses the Groq council.
+
+This is the desk pattern: **Claude plans patiently every 4h, a free deterministic loop waits
+for price to come to the level and confirms the trend before firing.** No per-trigger Claude
+call — the macro judgment (what, which strategy, where, what invalidates it) was already made
+at the 4h scan.
 
 ## Subscription, not API key
 
