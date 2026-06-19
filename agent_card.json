@@ -1,0 +1,28 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "XORR",
+  "description": "Regime-adaptive autonomous SPOT trading agent for the BNB Hack: AI Trading Agent Edition. Trades long-only spot on PancakeSwap across the eligible BEP-20 majors, driven by mean-reversion (buy oversold liquidation flushes, sell the bounce) plus breakout/trend strategies, with a two-tier kill switch that keeps drawdown under the disqualification gate. Self-custody on BNB Smart Chain; market data from CoinMarketCap.",
+  "version": "1.0.0",
+  "agentAddress": "eip155:56:0x3551f68748AACDd77d28a4149C014f8FFbb95f91",
+  "capabilities": [
+    "spot-trading",
+    "self-custody-bsc",
+    "market-data-coinmarketcap",
+    "risk-management",
+    "regime-adaptive-strategy"
+  ],
+  "skills": [
+    {"id": "spot-mean-reversion", "name": "Liquidation-flush mean reversion", "description": "Buys oversold majors after forced-selling flushes and exits into the bounce."},
+    {"id": "spot-breakout", "name": "Donchian / breakout longs", "description": "Long breakouts in confirmed up-trending tape."},
+    {"id": "risk-gate", "name": "Drawdown-disqualification guard", "description": "Two-tier soft/hard kill switch keeps max drawdown under the 30% competition cap."}
+  ],
+  "endpoints": {
+    "venue": "PancakeSwap V2 (BNB Smart Chain)",
+    "dataProvider": "CoinMarketCap",
+    "repository": "https://github.com/nickthelegend/xorr-agent-backend"
+  },
+  "registrations": [
+    {"agentRegistry": "eip155:56:0xfA09B3397fAC75424422C4D28b1729E3D4f659D7"}
+  ],
+  "trustModels": ["reputation"]
+}

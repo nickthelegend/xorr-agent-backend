@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     scan_interval_sec: int = Field(default=180)        # SIGNAL layer: heavy universe scan (rate-limit safe)
     sim_scan_interval_sec: int = Field(default=60)     # scan faster in simulation (visible activity)
     monitor_interval_sec: int = Field(default=15)      # RISK/EXIT layer: fast tick on cheap Binance marks
-    sim_start_usdt: float = Field(default=60.0)        # paper starting cash — mirror the live wallet ($50-70)
+    sim_start_usdt: float = Field(default=42.0)        # paper starting cash — mirror the live USDT (~$42 of a $50 budget; rest is BNB gas)
     sim_start_bnb: float = Field(default=0.03)         # paper BNB gas reserve
     sim_council_min: float = Field(default=0.30)       # relaxed entry bar in sim so the paper book stays active (live stays disciplined)
     max_concurrent_positions: int = Field(default=5)
@@ -206,6 +206,15 @@ class Settings(BaseSettings):
     risk_pause_min: float = Field(default=120.0)            # how long to pause new entries after a soft flatten
     perp_liq_guard_pct: float = Field(default=6.0)          # force-close a perp if mark within this % of liquidation
     data_max_staleness_sec: int = Field(default=180)        # circuit breaker: don't open trades on a frozen price feed
+
+    # --- ERC-8004 (BRC8004) on-chain agent registration ---
+    # The BNB Hack requires registering the agent's identity on the ERC-8004 Identity
+    # Registry (an ERC-721 that mints an agentId). register(agentURI) is nonpayable —
+    # only BSC gas. Signed locally by the same keystore wallet that trades.
+    erc8004_registry_address: str = Field(default="0xfA09B3397fAC75424422C4D28b1729E3D4f659D7")  # BSC mainnet IdentityRegistry
+    # URI to the off-chain agent card JSON (committed at repo root -> GitHub raw).
+    agent_card_uri: str = Field(default="https://raw.githubusercontent.com/nickthelegend/xorr-agent-backend/master/agent_card.json")
+    competition_contract: str = Field(default="0x212c61b9b72c95d95bf29cf032f5e5635629aed5")  # twak compete register target
 
     # --- Mode ---
     start_mode: str = Field(default="simulation")

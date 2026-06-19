@@ -70,22 +70,40 @@ START_MODE=simulation                 # flip to live only after the checks below
 
 ---
 
-## 1. Register on-chain (required to be scored)
+## 1. Fund the agent wallet (~$50 total)
 
-```bash
-twak compete register          # submits the on-chain registration tx
-twak compete status            # confirm registered
+**Your agent wallet (self-custody keystore, already generated):**
 ```
-Then submit your **agent wallet address** + a short strategy explainer on DoraHacks. The agent will also call registration automatically on first LIVE boot (`register_for_competition`), but doing it by hand first is safer.
+0x3551f68748AACDd77d28a4149C014f8FFbb95f91
+```
+This is the one to fund — it signs every spot swap locally (no TWAK needed). On a **$50**
+budget, send to it on **BNB Smart Chain (BEP-20)**:
+- **~$6–8 in BNB** for gas — BSC gas is dirt cheap (a swap is ~$0.01–0.05, ERC-8004
+  registration was metered at **~$0.01**), so this is plenty for the whole week.
+- **~$42–44 in USDT** (BSC, contract `0x55d3…7955`) for trading.
+- Hold a **non-zero in-scope balance at the start** — keep most of it in USDT (in-scope) so hour-0 isn't a 0.
 
-## 2. Fund the agent wallet (~$50–70)
+`SIM_START_USDT` already defaults to **42** to mirror this. (Confirm the exact address on the
+Wallet page → fundable address before sending.)
 
-Send to your agent wallet address (Wallet page → fundable address, or `twak wallet address` if using TWAK):
-- **~$8–12 in BNB** for gas (PancakeSwap swaps).
-- **~$45–60 in USDT** (BSC, contract `0x55d3…7955`) for trading.
-- You must hold a **non-zero in-scope balance at the start** — keep most of it in USDT (in-scope) so hour-0 isn't a 0.
+## 2. Register on-chain (required to be scored)
 
-Set the sim baseline to match so paper PnL is representative: `SIM_START_USDT` ≈ your USDT.
+**a) ERC-8004 agent identity** (BRC8004 Identity Registry, BSC `0xfA09…59D7`) — mints your
+agent's identity NFT. DRY-RUN first (sends nothing), then `--send` once the wallet has BNB:
+```bash
+python -m scripts.register_agent           # dry run: shows wallet, gas (~$0.01), sends nothing
+python -m scripts.register_agent --send     # registers for real (after funding BNB)
+```
+It signs locally with the same wallet, no fee (only ~$0.01 gas). Re-runs are safe — it
+short-circuits if the wallet already owns an agent NFT. The agent-card JSON it points to is
+[`agent_card.json`](agent_card.json) at the repo root.
+
+**b) Competition registration** (contract `0x212c…aed5`):
+```bash
+twak compete register          # OR: POST /api/engine/register  (auto-called on first LIVE boot)
+twak compete status
+```
+Then submit your **agent wallet address** + a short strategy explainer on DoraHacks.
 
 ## 3. ✅ No perp verification needed (spot-only)
 

@@ -88,6 +88,17 @@ def check_readiness() -> Dict[str, Any]:
     add("registered", "Registered on-chain (twak compete register)", registered,
         detail=("yes" if registered else "no"), fix="POST /api/engine/register (or `twak compete register`)")
 
+    # --- ERC-8004 (BRC8004) identity registration ---
+    erc8004 = False
+    try:
+        from core.erc8004 import is_registered as _erc_reg
+        erc8004 = _erc_reg()
+    except Exception:
+        pass
+    add("erc8004", "ERC-8004 agent identity registered", erc8004,
+        detail=("agent NFT owned" if erc8004 else "not yet"), optional=True,
+        fix="fund a little BNB, then: python -m scripts.register_agent --send")
+
     # --- capability summary ---
     spot_only = bool(getattr(settings, "spot_only", False))
     spot_live = connected and bool(addr) and bnb >= 0.003 and usdt >= 5.0
