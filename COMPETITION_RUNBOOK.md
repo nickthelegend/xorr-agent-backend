@@ -96,7 +96,9 @@ risk** to verify. Spot swaps are the proven, already-verified path. Skip straigh
 ## 4. Go live
 
 ```bash
-python run.py
+python run.py --spot     # spot-only (the competition mode)
+# python run.py --perps  # the perp engine is intact — selectable if perps are ever allowed
+# python run.py          # venue from .env (SPOT_ONLY/ENABLE_PERPS)
 ```
 - Open the dashboard (frontend `npm run dev`, default `http://localhost:3000`).
 - Confirm the **Wallet** page shows your real funded address and balances, and **GO-LIVE

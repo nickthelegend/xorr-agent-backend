@@ -31,10 +31,23 @@ and exit into the snap-back. That doesn't need leverage or shorting. And spot ha
 liquidation risk** (you own the token), which makes the **30% drawdown DQ gate far easier
 to respect** — the entire leverage/liquidation blow-up failure mode is gone.
 
-So the pivot is *not* a rewrite. The proven `*_perp` reversion strategies keep running as
-**signal sources**; we just take their **long side only** and execute it as a **1× spot
-swap**. One strategy that depended on shorting — `salamander_perp` (sell rallies in
-downtrends) — was correctly dropped (see below).
+So the pivot is *not* a rewrite, and **no perp code is removed** — it's a venue switch:
+the proven `*_perp` reversion strategies keep running as **signal sources**; we just take
+their **long side only** and execute it as a **1× spot swap**. One strategy that depended on
+shorting — `salamander_perp` (sell rallies in downtrends) — is **excluded from spot** (it
+stays enabled for perps; see below).
+
+### Switching venue per run
+The perp engine is fully intact and selectable at launch — nothing was deleted:
+
+```bash
+python run.py            # venue from .env (SPOT_ONLY / ENABLE_PERPS)
+python run.py --spot     # force SPOT-ONLY this run (long-only spot, perps off)
+python run.py --perps    # force SPOT + PERPS this run (long/short, leverage)
+```
+
+The backtest mirrors it: `python -X utf8 -m backtest.perf --spot [--all]` reports the
+long-only 1× spot book; without `--spot` it reports the leveraged perp book.
 
 ## 3. Honest re-validation (long-only, 1×)
 
@@ -62,7 +75,8 @@ salamander_perp                80%/dd12 |     -2  12.6  0.04  51   |      -6  12
 **11 of 12 stay OOS-positive long-only**, most with win rates 56–66% and drawdowns well
 under 15% (vs the 30% gate). `salamander_perp` is the lone failure — negative on *both*
 halves with a 46% win rate — because its edge was shorting rallies; long-only it just buys
-into downtrends. **It was disabled.** Everything else stays enabled.
+into downtrends. So it's **excluded from the spot book** (via `spot_excluded_strategies`)
+while **staying enabled for perps**. Everything else stays enabled.
 
 > These are ~1-year compounding figures at tuned sizing. Over a single competition *week*
 > they scale down to low single-digit % on average — reversion is bursty, so a week with
@@ -74,8 +88,9 @@ into downtrends. **It was disabled.** Everything else stays enabled.
 
 | Area | Change |
 |---|---|
-| `config.py` | `spot_only: bool = True` (master switch); `enable_perps` default → `False`; `salamander_perp` disabled |
-| `engine/pipeline.py` | spot-only branch runs the `*_perp` reversion strategies on the majors, keeps **LONG only**, routes to spot. `enforce_spot_only()` chokepoint drops any short and forces 1× spot |
+| `run.py` | `--spot` / `--perps` flags select the venue per run (set env before the app loads). **No perp code removed.** |
+| `config.py` | `spot_only: bool = True` (master switch); `enable_perps` default → `False`; `spot_excluded_strategies="salamander_perp"` (skipped in spot, kept for perps) |
+| `engine/pipeline.py` | spot-only branch runs the `*_perp` reversion strategies on the majors (minus the spot-excluded ones), keeps **LONG only**, routes to spot. `enforce_spot_only()` chokepoint drops any short and forces 1× spot |
 | `core/twak_executor.py` | `open_perp()` **fails closed** when `spot_only` — a perp can never open, even if a signal slips through |
 | `risk` / qualifier | unchanged — the daily qualifier was already a spot USDT→ETH→USDT round-trip; the drawdown ladder + kill switch still apply |
 | `core/readiness.py` | reports `tradingVenue: "spot"`, `spotOnly: true`; TWAK demoted to *optional* (special prize only — not needed to trade) |

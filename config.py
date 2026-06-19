@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     enable_strategy_whale_flow: bool = Field(default=True)
     enable_strategy_donchian_breakout: bool = Field(default=True)    # +1.35R star (spot long)
     enable_strategy_donchian_perp: bool = Field(default=False)       # -> shadow: failed comm2x (dies at 2x cost)
-    enable_strategy_salamander_perp: bool = Field(default=False)     # DISABLED for spot-only: its edge was SHORTING rallies; long-only it loses (spot backtest -2%/-6% OOS)
+    enable_strategy_salamander_perp: bool = Field(default=True)      # PERP book: long/short pullbacks, best shorts (+0.55R). Auto-excluded in spot mode (long-only it loses) via spot_excluded_strategies.
     enable_strategy_supertrend_perp: bool = Field(default=False)     # marginal (+0.04R); available, off by default
     enable_strategy_rsi_reversion: bool = Field(default=False)       # -0.52R
     enable_strategy_xsect_momentum: bool = Field(default=True)
@@ -154,6 +154,11 @@ class Settings(BaseSettings):
     volsq_sl_atr: float = Field(default=2.0)
     volsq_tp_atr: float = Field(default=3.5)
     rsi_div_lookback: int = Field(default=20)
+
+    # Strategies that stay ENABLED for perps but must NOT trade in spot-only mode
+    # (their edge is the SHORT side, so long-only they lose). Skipped in the spot
+    # branch of the pipeline; still active when spot_only=False (perps).
+    spot_excluded_strategies: str = Field(default="salamander_perp")
 
     # --- Trading venue (HACKATHON: SPOT ONLY) ---
     # The competition allows spot trading only — no perps. In spot_only mode the

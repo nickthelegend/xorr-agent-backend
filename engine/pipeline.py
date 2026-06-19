@@ -269,6 +269,10 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
     #     in TREND_UP/CHOP; in a falling tape they stay flat (capital preservation).
     spot_only = bool(getattr(settings, "spot_only", False))
     if spot_only and perp_strats:
+        # Strategies whose edge is the SHORT side don't belong in a long-only spot
+        # book — keep them enabled for perps, but skip them here.
+        _spot_excl = {s.strip() for s in (getattr(settings, "spot_excluded_strategies", "") or "").split(",") if s.strip()}
+        spot_reversion = [s for s in perp_strats if s.name not in _spot_excl]
         for symbol in _perp_universe(ctx):
             quote = ctx.quotes.get(symbol.upper())
             if not quote or is_blacklisted(session, symbol):
@@ -277,7 +281,7 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
                 continue
             candles_5m = await fetch_binance_klines(symbol, "5m", limit=35)
             candles_1h = await fetch_binance_klines(symbol, "1h", limit=80)
-            for strat in perp_strats:
+            for strat in spot_reversion:
                 try:
                     sig = await strat.evaluate(symbol, candles_5m, candles_1h, ctx)
                 except Exception as e:
