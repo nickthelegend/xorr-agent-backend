@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     monitor_interval_sec: int = Field(default=15)      # RISK/EXIT layer: fast tick on cheap Binance marks
     sim_start_usdt: float = Field(default=42.0)        # paper starting cash — mirror the live USDT (~$42 of a $50 budget; rest is BNB gas)
     sim_start_bnb: float = Field(default=0.03)         # paper BNB gas reserve
-    sim_council_min: float = Field(default=0.30)       # relaxed entry bar in sim so the paper book stays active (live stays disciplined)
+    sim_council_min: float = Field(default=0.25)       # relaxed entry bar in SIM so the paper book stays active (marginal signals trade on paper). LIVE uses council_min_final_confidence=0.62 — unaffected.
     max_concurrent_positions: int = Field(default=5)
     base_trade_size_usd: float = Field(default=2.0)
     slippage_bps_spot: int = Field(default=150)
@@ -215,6 +215,21 @@ class Settings(BaseSettings):
     # URI to the off-chain agent card JSON (committed at repo root -> GitHub raw).
     agent_card_uri: str = Field(default="https://raw.githubusercontent.com/nickthelegend/xorr-agent-backend/master/agent_card.json")
     competition_contract: str = Field(default="0x212c61b9b72c95d95bf29cf032f5e5635629aed5")  # twak compete register target
+
+    # --- Claude decision brain (uses the Claude CLI / SUBSCRIPTION, not an API key) ---
+    # A watchlist agent scans the universe every few hours, scores each coin, and asks
+    # Claude (via `claude -p` headless — your Pro/Max subscription) to pick what to play
+    # + which enabled strategy fits. Replaces the weak Groq council when enabled. The
+    # agent must run where the `claude` CLI is installed + logged in. Fail-open to a
+    # deterministic score-based pick if the CLI is absent.
+    enable_claude_brain: bool = Field(default=False)
+    claude_cli_bin: str = Field(default="claude")
+    claude_model: str = Field(default="claude-opus-4-8")
+    claude_timeout_sec: int = Field(default=120)
+    claude_min_conviction: float = Field(default=0.55)     # ignore picks below this conviction
+    watchlist_universe_size: int = Field(default=70)        # coins scanned per cycle
+    watchlist_interval_hours: float = Field(default=4.0)    # how often to rebuild the playbook
+    watchlist_max_picks: int = Field(default=5)             # max concurrent Claude picks
 
     # --- Mode ---
     start_mode: str = Field(default="simulation")

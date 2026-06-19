@@ -370,6 +370,18 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
     if spot_only:
         raw_signals = enforce_spot_only(raw_signals)
 
+    # Claude decision brain (subscription CLI): inject the current playbook's picks as
+    # spot-long signals. They're force-entered below (Claude decides, not the Groq council).
+    if bool(getattr(settings, "enable_claude_brain", False)):
+        try:
+            from claude.playbook import to_signals as _claude_to_signals
+            cs = _claude_to_signals(ctx)
+            if cs:
+                raw_signals.extend(cs)
+                await log_engine_msg(session, "info", f"[claude] {len(cs)} playbook pick(s) added to this scan.")
+        except Exception as e:
+            print(f"[CLAUDE] playbook signals skipped: {e}")
+
     if not raw_signals:
         await log_engine_msg(session, "info", "[bot] No technical signals triggered. Scan complete.")
         return
@@ -402,9 +414,14 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
     trades_executed = 0
     from dataclasses import asdict
     for sig, dec in zip(arbitrated_signals, decisions):
+        # Claude's playbook picks ARE the decision — force-enter them (the Groq council
+        # doesn't get a veto on what Claude already chose).
+        if str(getattr(sig, "strategy_name", "")).startswith("claude:"):
+            dec.action = "enter"
+            dec.final_confidence = max(getattr(dec, "final_confidence", 0.0), float(sig.confidence))
         if trades_executed >= free_slots:
             break
-            
+
         score = dec.final_confidence * 100.0
         reasoning = dec.votes[0].get("reasoning", "") if dec.votes else "No reasoning"
         

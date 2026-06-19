@@ -30,6 +30,7 @@ and an out-of-sample robustness gauntlet).
 9. [09 — Verification](09-verification.md) ✅ — proof the sim, all layers, and the live path are tested and working.
 10. [10 — trader.dev](10-trader-dev.md) — mining a 36k-strategy database; it independently confirms reversion>momentum. We ported its 3 best oscillators and gauntleted them (1 enabled, 2 shadow).
 11. [11 — Spot-Only Pivot](11-spot-only.md) ⭐ — the competition is spot-only. What that costs, what survives (11/12 reversion strategies stay OOS-positive long-only), and exactly what changed.
+12. [12 — Claude Decision Brain](12-claude-brain.md) ⭐ — replaces the weak Groq council: a 4-hourly watchlist agent scores ~70 coins and Claude (via your subscription CLI) picks what to play + the strategy. No API key.
 
 Also at the repo root: [`COMPETITION_RUNBOOK.md`](../COMPETITION_RUNBOOK.md) (go-live steps) and [`ROBUSTNESS.md`](../ROBUSTNESS.md) (the ranked survival table).
 

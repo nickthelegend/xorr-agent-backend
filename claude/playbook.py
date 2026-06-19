@@ -1,0 +1,112 @@
+"""Playbook cache + refresh + signal conversion.
+
+The watchlist agent + Claude brain produce a "playbook" (what to play + the strategy
+for each). This module refreshes it on a cadence, caches it (in-memory + a JSON file so
+it survives a restart within the TTL), and converts the picks into spot LONG Signal
+objects the trading pipeline can execute. Claude is the decision-maker; the pipeline
+force-enters Claude's picks (bypassing the weak Groq council).
+"""
+import json
+import os
+import time
+from pathlib import Path
+from typing import List, Optional
+
+from config import settings
+from core.types import Signal, MarketContext
+from data.tokens import resolve
+
+_CACHE_PATH = Path("data_store/claude_playbook.json")
+_mem = {"pb": None, "ts": 0.0}
+
+
+def _ttl_sec() -> float:
+    # allow a little staleness past the refresh interval before the playbook expires
+    return float(getattr(settings, "watchlist_interval_hours", 4.0)) * 3600.0 * 1.5
+
+
+def _load_disk():
+    try:
+        if _CACHE_PATH.exists():
+            with open(_CACHE_PATH, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            return d.get("pb"), float(d.get("ts", 0.0))
+    except Exception:
+        pass
+    return None, 0.0
+
+
+def get_playbook() -> Optional[dict]:
+    """Current playbook if fresh (within TTL), else None."""
+    pb, ts = _mem["pb"], _mem["ts"]
+    if pb is None:
+        pb, ts = _load_disk()
+        _mem["pb"], _mem["ts"] = pb, ts
+    if pb is None:
+        return None
+    if (time.time() - ts) > _ttl_sec():
+        return None
+    return pb
+
+
+def _store(pb: dict):
+    ts = time.time()
+    _mem["pb"], _mem["ts"] = pb, ts
+    try:
+        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"pb": pb, "ts": ts}, f)
+    except Exception:
+        pass
+
+
+async def refresh_playbook() -> dict:
+    """Scan -> score -> ask Claude -> cache. Returns the new playbook."""
+    from claude.watchlist_agent import build_watchlist
+    from claude.claude_brain import decide_playbook
+    wl = await build_watchlist()
+    pb = await decide_playbook(wl)
+    pb["regime"] = wl.get("regime")
+    pb["scanned"] = wl.get("scanned")
+    _store(pb)
+    return pb
+
+
+def _sl_tp(strategy: str):
+    s = strategy.lower()
+    if "breakout" in s or "donchian" in s:
+        return 3.0, 6.0   # breakout: wider target
+    if "trend" in s:
+        return 3.0, 6.0
+    return 3.5, 5.0       # reversion default
+
+
+def to_signals(ctx: MarketContext) -> List[Signal]:
+    """Convert the current playbook's picks into spot LONG signals (or [] if stale)."""
+    pb = get_playbook()
+    if not pb:
+        return []
+    lev = 1.0
+    out = []
+    open_syms = {p.symbol.upper() for p in (ctx.open_positions or [])}
+    for p in pb.get("picks", []):
+        try:
+            sym = str(p["symbol"]).upper()
+            strat = str(p["strategy"])
+            conf = float(p.get("conviction", 0))
+        except Exception:
+            continue
+        if sym in open_syms:
+            continue   # already holding it
+        t = resolve(sym)
+        if not t or not t.contract:
+            continue   # not tradable on-chain
+        sl, tp = _sl_tp(strat)
+        out.append(Signal(
+            symbol=sym, contract=t.contract, side="buy",
+            confidence=max(0.05, min(0.97, conf)),
+            stop_loss_pct=sl, take_profit_pct=tp, max_hold_min=480,
+            rationale=f"[Claude pick · {strat}] {str(p.get('reason',''))[:160]}",
+            strategy_name=f"claude:{strat}", direction="long", venue="spot", leverage=lev,
+        ))
+    return out

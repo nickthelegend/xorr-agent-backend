@@ -16,6 +16,7 @@ class EngineScheduler:
         self._scan_task = None
         self._monitor_task = None
         self._watchdog_task = None
+        self._playbook_task = None
         self._executor = None
         self._scan_trigger_event = asyncio.Event()
         self._scan_heartbeat = 0.0
@@ -41,6 +42,11 @@ class EngineScheduler:
         self._monitor_task = asyncio.create_task(self._monitor_loop())
         if self._watchdog_task is None or self._watchdog_task.done():
             self._watchdog_task = asyncio.create_task(self._watchdog_loop())
+
+        # Claude decision brain: periodic watchlist -> playbook refresh (subscription CLI)
+        if bool(getattr(settings, "enable_claude_brain", False)):
+            if self._playbook_task is None or self._playbook_task.done():
+                self._playbook_task = asyncio.create_task(self._playbook_loop())
 
         print("[SCHEDULER] Engine scheduler started background tasks + watchdog.")
 
@@ -91,6 +97,25 @@ class EngineScheduler:
                     exc = self._monitor_task.exception()
                 print(f"[WATCHDOG] monitor loop ended unexpectedly (exc={exc}); restarting.")
                 self._monitor_task = asyncio.create_task(self._monitor_loop())
+
+    async def _playbook_loop(self):
+        """Rebuild the Claude playbook on a cadence (default every 4h). Refreshes once
+        on boot, then sleeps the interval. Fail-soft — a bad cycle is logged, not fatal."""
+        from claude.playbook import refresh_playbook
+        while self._running:
+            try:
+                pb = await refresh_playbook()
+                n = len(pb.get("picks", []))
+                with Session(engine) as s:
+                    await log_engine_msg(
+                        s, "info",
+                        f"[claude] playbook refreshed: {n} pick(s) (source={pb.get('source')}, regime={pb.get('regime')}).")
+            except Exception as e:
+                print(f"[CLAUDE] playbook refresh failed: {e}")
+            try:
+                await asyncio.sleep(float(getattr(settings, "watchlist_interval_hours", 4.0)) * 3600.0)
+            except asyncio.CancelledError:
+                break
 
     def trigger_scan(self):
         """Triggers an immediate scan execution."""
