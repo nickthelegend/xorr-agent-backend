@@ -245,7 +245,7 @@ class Settings(BaseSettings):
     claude_trigger_buffer: float = Field(default=0.004)    # price tolerance (0.4%) around an entry alert
     claude_tp_r_multiple: float = Field(default=2.5)        # hard take-profit = this many R (let winners run via the trail)
     watchlist_universe_size: int = Field(default=160)       # scan the FULL eligible+tradable set (no artificial cap; 149 whitelist)
-    watchlist_interval_hours: float = Field(default=4.0)    # how often to rebuild the playbook
+    watchlist_interval_hours: float = Field(default=1.0)    # how often Claude re-picks the watchlist (watching/triggering of picks stays every 60-180s)
     watchlist_max_picks: int = Field(default=5)             # max concurrent Claude picks
     watchlist_send_top: int = Field(default=15)             # how many ranked coins to hand Claude (trim = fewer tokens)
 
