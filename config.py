@@ -244,13 +244,13 @@ class Settings(BaseSettings):
     claude_min_conviction: float = Field(default=0.45)     # ignore picks below this conviction
     claude_trigger_buffer: float = Field(default=0.004)    # price tolerance (0.4%) around an entry alert
     claude_tp_r_multiple: float = Field(default=2.5)        # hard take-profit = this many R (let winners run via the trail)
-    watchlist_universe_size: int = Field(default=70)        # coins scanned per cycle
+    watchlist_universe_size: int = Field(default=160)       # scan the FULL eligible+tradable set (no artificial cap; 149 whitelist)
     watchlist_interval_hours: float = Field(default=4.0)    # how often to rebuild the playbook
     watchlist_max_picks: int = Field(default=5)             # max concurrent Claude picks
-    watchlist_send_top: int = Field(default=12)             # how many ranked coins to hand Claude (trim = fewer tokens)
+    watchlist_send_top: int = Field(default=15)             # how many ranked coins to hand Claude (trim = fewer tokens)
 
     # --- Confluence + council "discussion" (verify a setup with all the strats' math) ---
-    confluence_top_n: int = Field(default=10)               # candidates to run the all-strats confluence panel on
+    confluence_top_n: int = Field(default=15)               # candidates to run the all-strats confluence panel on
     confluence_min_agree: int = Field(default=2)            # >= this many lenses must agree to call a setup "real"
     enable_groq_screen: bool = Field(default=True)          # let the Groq council pre-screen candidates before Claude
     claude_gate_on_confluence: bool = Field(default=True)   # skip the Claude call when nothing has real confluence (saves usage)

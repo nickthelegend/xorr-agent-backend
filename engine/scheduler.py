@@ -106,10 +106,13 @@ class EngineScheduler:
             try:
                 pb = await refresh_playbook()
                 n = len(pb.get("picks", []))
+                watch = ", ".join(p.get("symbol", "?") for p in pb.get("picks", [])) or "none"
+                msg = (f"[claude] analyzed {pb.get('scanned', 0)} eligible tokens with all strategies "
+                       f"-> {pb.get('verified', 0)} confluence-verified -> {n} pick(s): {watch} "
+                       f"(source={pb.get('source')}, regime={pb.get('regime')}).")
+                print(msg)
                 with Session(engine) as s:
-                    await log_engine_msg(
-                        s, "info",
-                        f"[claude] playbook refreshed: {n} pick(s) (source={pb.get('source')}, regime={pb.get('regime')}).")
+                    await log_engine_msg(s, "info", msg)
             except Exception as e:
                 print(f"[CLAUDE] playbook refresh failed: {e}")
             try:
@@ -141,6 +144,13 @@ class EngineScheduler:
                     await run_pipeline_cycle(session, self._executor)
             except Exception as e:
                 print(f"[SCHEDULER ERROR] Scan loop cycle failed: {e}")
+
+            # Clean one-glance status line to the console each scan.
+            try:
+                from engine.status import print_status
+                await print_status()
+            except Exception as e:
+                print(f"[status] heartbeat skipped: {e}")
 
             # Reset status back to IDLE
             with Session(engine) as session:

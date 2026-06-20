@@ -68,6 +68,12 @@ async def refresh_playbook() -> dict:
     pb = await decide_playbook(wl)
     pb["regime"] = wl.get("regime")
     pb["scanned"] = wl.get("scanned")
+    # funnel telemetry: how many scanned coins were confluence-verified (attach_confluence
+    # mutated wl['ranked'] in place inside decide_playbook, so the panels are here now).
+    ranked = wl.get("ranked", [])
+    min_agree = int(getattr(settings, "confluence_min_agree", 2))
+    pb["analyzed"] = sum(1 for r in ranked if r.get("confluence"))
+    pb["verified"] = sum(1 for r in ranked if (r.get("confluence") or {}).get("agree", 0) >= min_agree)
     _store(pb)
     return pb
 
