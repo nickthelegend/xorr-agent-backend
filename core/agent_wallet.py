@@ -232,6 +232,57 @@ class AgentWallet:
             return SwapResult(False, error=str(e))
 
 
+    # ---- plain transfers (move funds OUT of the keystore, e.g. to the TWAK wallet) ----
+    def send_bnb(self, to_address: str, amount_wei: int) -> SwapResult:
+        """Send native BNB to an address, signing locally."""
+        if not self.account or not self.address:
+            return SwapResult(False, error="No agent wallet configured")
+        try:
+            owner = self.w3.to_checksum_address(self.address)
+            to = self.w3.to_checksum_address(to_address)
+            tx = {
+                "from": owner, "to": to, "value": int(amount_wei),
+                "nonce": self.w3.eth.get_transaction_count(owner),
+                "gas": 21000, "gasPrice": self.w3.eth.gas_price,
+                "chainId": settings.bsc_chain_id,
+            }
+            signed = self.account.sign_transaction(tx)
+            txh = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+            receipt = self.w3.eth.wait_for_transaction_receipt(txh, timeout=180)
+            tx_hex = self.w3.to_hex(txh)
+            if receipt.status != 1:
+                return SwapResult(False, tx_hash=tx_hex, error="BNB transfer reverted")
+            return SwapResult(True, tx_hash=tx_hex, amount_in=float(amount_wei) / 1e18)
+        except Exception as e:
+            logger.error(f"[WALLET] send_bnb failed: {e}")
+            return SwapResult(False, error=str(e))
+
+    def transfer_token(self, token_address: str, to_address: str, amount_wei: int) -> SwapResult:
+        """Send an ERC-20 token to an address, signing locally."""
+        if not self.account or not self.address:
+            return SwapResult(False, error="No agent wallet configured")
+        try:
+            owner = self.w3.to_checksum_address(self.address)
+            to = self.w3.to_checksum_address(to_address)
+            c = self.w3.eth.contract(address=self.w3.to_checksum_address(token_address), abi=ERC20_ABI)
+            tx = c.functions.transfer(to, int(amount_wei)).build_transaction({
+                "from": owner,
+                "nonce": self.w3.eth.get_transaction_count(owner),
+                "gas": 80000, "gasPrice": self.w3.eth.gas_price,
+                "chainId": settings.bsc_chain_id,
+            })
+            signed = self.account.sign_transaction(tx)
+            txh = self.w3.eth.send_raw_transaction(signed.raw_transaction)
+            receipt = self.w3.eth.wait_for_transaction_receipt(txh, timeout=180)
+            tx_hex = self.w3.to_hex(txh)
+            if receipt.status != 1:
+                return SwapResult(False, tx_hash=tx_hex, error="Token transfer reverted")
+            return SwapResult(True, tx_hash=tx_hex, amount_in=float(amount_wei))
+        except Exception as e:
+            logger.error(f"[WALLET] transfer_token failed: {e}")
+            return SwapResult(False, error=str(e))
+
+
 _agent_wallet: Optional[AgentWallet] = None
 
 

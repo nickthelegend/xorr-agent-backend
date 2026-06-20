@@ -45,13 +45,21 @@ class TwakExecutor:
         self._sim_token_balances: Dict[str, float] = {}
 
     def _twak_ready(self) -> bool:
-        """True only when the real TWAK CLI is installed AND Trust Wallet API
-        credentials are configured. Otherwise the agent uses the local web3
-        self-custody keystore. (TWAK requires creds even to create a wallet.)"""
+        """True when the real TWAK CLI is installed AND authenticated — either via env
+        creds OR a persisted ~/.twak/credentials.json (written by `twak init`/`twak setup`).
+        Otherwise the agent uses the local web3 self-custody keystore."""
         cli = shutil.which(self.settings.twak_bin)
+        if not cli:
+            return False
         access = os.environ.get("TWAK_ACCESS_ID", self.settings.twak_access_id)
         secret = os.environ.get("TWAK_HMAC_SECRET", self.settings.twak_hmac_secret)
-        return bool(cli and access and secret)
+        if access and secret:
+            return True
+        try:
+            from pathlib import Path
+            return (Path.home() / ".twak" / "credentials.json").exists()
+        except Exception:
+            return False
 
     def _extract_json(self, text: str) -> dict:
         if not text:
