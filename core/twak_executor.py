@@ -27,6 +27,17 @@ SIM_PERP_TAKER_FEE = 0.0006    # 6 bps/side
 # We use a real burner address for simulation mode
 BURNER_ADDRESS = "0x7777777000000000000000000000000000000777"
 
+
+def _num_amount(s) -> float:
+    """Parse a TWAK formatted amount like '3.620155 CAKE' or '5.0 USDT' (or a plain
+    number) into a float. Returns 0.0 if unparseable."""
+    if s is None:
+        return 0.0
+    try:
+        return float(str(s).strip().split()[0].replace(",", ""))
+    except Exception:
+        return 0.0
+
 class TwakError(Exception):
     pass
 
@@ -279,8 +290,8 @@ class TwakExecutor:
                 "swap", str(amount_in), token_in, token_out,
                 "--chain", "bsc", "--quote-only"
             ])
-            # Parse output
-            price_out = float(data.get("price") or data.get("output") or 0.0)
+            # Parse output ("5.768 USDT" -> 5.768; symbol-suffixed strings, not raw numbers)
+            price_out = _num_amount(data.get("price") or data.get("output"))
             return Quote(
                 symbol="",
                 price=price_out,
@@ -408,13 +419,19 @@ class TwakExecutor:
             
             tx = (data.get("hash") or data.get("txHash") or data.get("transactionHash")
                   or data.get("tx") or "")
-            out_amt = float(data.get("output") or data.get("toAmount") or data.get("received") or 0.0)
-            
+            # TWAK returns output as a formatted string WITH the symbol, e.g. "3.62 CAKE" —
+            # parse the leading number, don't float() the whole thing.
+            out_amt = _num_amount(data.get("output") or data.get("toAmount") or data.get("received"))
+
             success = bool(tx) or out_amt > 0.0
-            
-            # Compute price
+
+            # Executed price in USD-per-token, DIRECTION-AWARE (a buy spends USDT for tokens;
+            # a sell spends tokens for USDT) — out/in would be inverted on a buy.
             in_amt_f = float(amount_in)
-            exec_price = out_amt / in_amt_f if success and in_amt_f > 0 else 0.0
+            if token_in.lower() == usdt:                 # BUY: USDT in, tokens out
+                exec_price = (in_amt_f / out_amt) if out_amt > 0 else 0.0
+            else:                                        # SELL: tokens in, USDT out
+                exec_price = (out_amt / in_amt_f) if in_amt_f > 0 else 0.0
             
             return ExecutionResult(
                 success=success,
