@@ -21,11 +21,13 @@ def _chat() -> str:
     return os.environ.get("TELEGRAM_CHAT_ID", getattr(settings, "telegram_chat_id", "") or "")
 
 
-def _proxy() -> Optional[str]:
-    # Needed where api.telegram.org is ISP-blocked (e.g. India). Set TELEGRAM_PROXY to an
-    # http(s):// or socks5:// proxy reachable from this machine. Unset on a VPS where
-    # Telegram is reachable directly.
-    return os.environ.get("TELEGRAM_PROXY", getattr(settings, "telegram_proxy", "") or "") or None
+def _proxies() -> list:
+    # Needed where api.telegram.org is ISP-blocked (e.g. India). TELEGRAM_PROXY may hold a
+    # COMMA-SEPARATED list of http(s)://[user:pass@]host:port (or socks5://...) — send()
+    # tries each in turn and uses the first that works, so a dead proxy auto-fails-over.
+    # Leave empty on a VPS where Telegram is reachable directly.
+    raw = os.environ.get("TELEGRAM_PROXY", getattr(settings, "telegram_proxy", "") or "") or ""
+    return [p.strip() for p in raw.split(",") if p.strip()]
 
 
 def enabled() -> bool:
@@ -42,27 +44,31 @@ def fire(coro) -> None:
 
 
 async def send(text: str) -> bool:
-    """Send a message to the owner chat. Never raises. Short timeout so a blocked
-    endpoint fails fast rather than hanging the caller."""
+    """Send a message to the owner chat. Never raises. Tries direct + each configured proxy
+    in turn (auto-failover); stops early on a 4xx (bad token/chat — another proxy won't help)."""
     if not enabled():
         return False
-    try:
-        kw = {"timeout": 8.0}
-        proxy = _proxy()
-        if proxy:
-            kw["proxy"] = proxy
-        async with httpx.AsyncClient(**kw) as c:
-            r = await c.post(
-                f"https://api.telegram.org/bot{_token()}/sendMessage",
-                json={"chat_id": _chat(), "text": text, "parse_mode": "HTML",
-                      "disable_web_page_preview": True},
-            )
-            if r.status_code != 200:
-                print(f"[telegram] send non-200: {r.status_code} {r.text[:120]}")
-            return r.status_code == 200
-    except Exception as e:
-        print(f"[telegram] send failed (blocked? set TELEGRAM_PROXY): {str(e)[:80]}")
-        return False
+    url = f"https://api.telegram.org/bot{_token()}/sendMessage"
+    payload = {"chat_id": _chat(), "text": text, "parse_mode": "HTML",
+               "disable_web_page_preview": True}
+    routes = _proxies() or [None]   # [None] = direct connection
+    for proxy in routes:
+        try:
+            kw = {"timeout": 8.0}
+            if proxy:
+                kw["proxy"] = proxy
+            async with httpx.AsyncClient(**kw) as c:
+                r = await c.post(url, json=payload)
+            if r.status_code == 200:
+                return True
+            if 400 <= r.status_code < 500:
+                # bad chat_id/token — failing over to another proxy won't fix it
+                print(f"[telegram] {r.status_code}: {r.text[:120]}")
+                return False
+        except Exception:
+            continue   # this proxy is down — try the next
+    print("[telegram] all routes failed (proxy down / blocked)")
+    return False
 
 
 def _clean_strat(name: str) -> str:
