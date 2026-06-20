@@ -42,32 +42,43 @@ def calculate_perp_margin(
 
 def calculate_claude_size(
     available_usdt: float,
+    deployed_usd: float,
     active_position_count: int,
     conviction: float,
     drawdown_multiplier: float = 1.0,
 ) -> float:
-    """Sizing for Claude's force-entered picks.
+    """Tournament sizing for Claude's force-entered picks — deploy REAL capital into a few
+    concentrated bets, capped to protect the ~30% drawdown DQ gate.
 
     Claude's picks are deliberate, confluence-verified decisions the user wants TAKEN, so
     they bypass the generic multiplier stack — in particular the Fear & Greed penalty, which
-    is perverse here: our edge is FADING extreme fear (buying oversold flushes), yet that
-    penalty shrinks exactly those trades below the dust floor and drops them. We instead size
-    purely by conviction, keep the drawdown ladder (DQ-gate protection) and the concurrency
-    cap, and floor the size so a real pick always clears the on-chain minimum.
+    is perverse here (our edge is FADING fear). We size by conviction off the base, then cap:
+      - per position  <= claude_max_position_pct of trading capital
+      - all positions <= claude_max_deploy_pct  of trading capital (remaining room)
+      - <= available USDT cash, and the concurrency + drawdown-ladder gates still bind.
+    'Trading capital' = USDT cash + USDT already in open positions (excludes the BNB gas
+    reserve), so the % caps reflect what we can actually deploy.
     """
     if active_position_count >= settings.max_concurrent_positions:
         print(f"[SIZING] Claude pick rejected: positions ({active_position_count}) >= max ({settings.max_concurrent_positions}).")
         return 0.0
     if drawdown_multiplier <= 0:
         return 0.0   # drawdown ladder says stand down — respect the DQ gate above all
+
+    trading_capital = max(0.0, available_usdt) + max(0.0, deployed_usd)
+    per_pos_cap = float(getattr(settings, "claude_max_position_pct", 0.25)) * trading_capital
+    total_cap = float(getattr(settings, "claude_max_deploy_pct", 0.60)) * trading_capital
+    room = max(0.0, total_cap - deployed_usd)          # how much more we may deploy in total
+
     conv = max(0.0, min(1.0, conviction))
     conv_mult = 0.8 + 0.8 * conv                       # 0.8x .. 1.6x of base
     size = settings.base_trade_size_usd * conv_mult * drawdown_multiplier
-    size = max(size, 1.20)                             # a real pick always clears the dust floor
-    size = min(size, available_usdt)
+    size = max(size, 1.20)                             # a real pick clears the dust floor...
+    size = min(size, per_pos_cap, room, available_usdt)  # ...but never breaches the caps
     if size < 1.10:
         return 0.0
-    print(f"[SIZING] Claude size: ${size:.2f} (Base=${settings.base_trade_size_usd}, conv={conv:.2f} ({conv_mult:.2f}x), DD={drawdown_multiplier}x)")
+    print(f"[SIZING] Claude size: ${size:.2f} (base=${settings.base_trade_size_usd}, conv={conv:.2f} ({conv_mult:.2f}x), "
+          f"DD={drawdown_multiplier}x, per-pos cap=${per_pos_cap:.2f}, room=${room:.2f})")
     return round(size, 2)
 
 

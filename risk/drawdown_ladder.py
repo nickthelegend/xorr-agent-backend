@@ -21,13 +21,13 @@ def calculate_drawdown_multiplier(session: Session, current_equity: float) -> fl
     drawdown_pct = ((peak - current_equity) / peak) * 100.0
     stop_entry = max(12.0, float(settings.flatten_drawdown_pct) - 4.0)  # e.g. 22-4 = 18%
 
-    if drawdown_pct < 5.0:
+    # Controlled aggression: spend the early drawdown budget on upside (full size until ~10%),
+    # then throttle hard, then stop opening new risk well before the flatten/DQ backstop.
+    if drawdown_pct < 10.0:
         return 1.0
-    elif drawdown_pct < 10.0:
-        return 0.7
-    elif drawdown_pct < 14.0:
-        return 0.45
+    elif drawdown_pct < 16.0:
+        return 0.6
     elif drawdown_pct < stop_entry:
-        return 0.25
+        return 0.3
     else:
         return 0.0  # stop opening new risk; backstop flatten handles the rest

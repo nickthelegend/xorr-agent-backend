@@ -34,11 +34,16 @@ splits, sensitivity sweeps, and a 4-way robustness gauntlet. The verdict:
 - ✅ **FADE oversold liquidation flushes (mean-reversion) is the durable edge.** Buying a
   deeply oversold coin pinned at range lows, after a capitulation flush, into support —
   then selling the bounce — survives OOS and cost stress. This is your bread and butter.
-- ❌ **Momentum / breakout / trend-chasing fails out-of-sample, repeatedly.** Donchian
-  breakouts, BB breakouts, ADX trend-follow look great in-sample and bleed live. Treat any
-  breakout pick with **suspicion** — only take one with strong confluence AND a supportive
-  (TREND_UP) regime, never into a falling tape.
-- The asymmetry: **reversion buys fear, momentum buys hope.** Fear pays.
+- ⚠️ **Momentum / breakout is unreliable long-run, but it's our home-run in this 7-day
+  contest.** Breakouts bleed out-of-sample — BUT the contest ranks on total return over one
+  week, and the winner will be whoever caught a coin that ran +50-200%. Reversion can't do
+  that; momentum can. So: in a **confirmed uptrend (TREND_UP) with strong confluence and
+  volume**, it is correct to take **one** breakout/trend pick as a deliberate home-run swing
+  and **let it run** (it gets a wide ~6R cap + trailing stop, not an early exit). Never chase
+  a breakout in a falling/choppy tape — that's where it bleeds.
+- The asymmetry: **reversion buys fear (the steady base), momentum buys hope (the lottery
+  ticket that wins the week).** Run mostly reversion, with at most one momentum runner when
+  the tape genuinely supports it.
 
 ### Losing patterns to avoid
 - Chasing a coin that's already run up (buying strength late = bag-holding the top).

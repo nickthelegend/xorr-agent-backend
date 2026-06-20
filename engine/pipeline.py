@@ -460,10 +460,13 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
                 available_usdt=usdt_balance,
             )
         elif is_claude_pick:
-            # Claude's deliberate, confluence-verified pick — size by conviction with the
-            # drawdown ladder kept, but no Fear&Greed penalty (we're fading fear on purpose).
+            # Claude's deliberate, confluence-verified pick — concentrate real capital by
+            # conviction, capped to protect the DQ gate; no Fear&Greed penalty (fading fear).
+            deployed_usd = sum(float(getattr(p, "invested", 0.0) or 0.0)
+                               for p in real_open if getattr(p, "venue", "spot") != "perp")
             stake = calculate_claude_size(
-                available_usdt=usdt_balance, active_position_count=len(real_open),
+                available_usdt=usdt_balance, deployed_usd=deployed_usd,
+                active_position_count=len(real_open),
                 conviction=dec.final_confidence, drawdown_multiplier=dd_mult,
             )
         else:

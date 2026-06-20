@@ -50,8 +50,12 @@ class Settings(BaseSettings):
     sim_start_usdt: float = Field(default=42.0)        # paper starting cash — mirror the live USDT (~$42 of a $50 budget; rest is BNB gas)
     sim_start_bnb: float = Field(default=0.03)         # paper BNB gas reserve
     sim_council_min: float = Field(default=0.25)       # relaxed entry bar in SIM so the paper book stays active (marginal signals trade on paper). LIVE uses council_min_final_confidence=0.62 — unaffected.
-    max_concurrent_positions: int = Field(default=5)
-    base_trade_size_usd: float = Field(default=2.0)
+    max_concurrent_positions: int = Field(default=3)   # CONCENTRATE: 2-3 meaningful bets beat 5 dust trades (gas + return)
+    base_trade_size_usd: float = Field(default=7.0)     # bigger base so conviction-scaled Claude picks deploy real capital
+    # Tournament sizing for Claude picks (deploy real capital, capped to protect the DQ gate).
+    # Caps are a % of TRADING capital (USDT cash + USDT in open positions), not BNB-inflated equity.
+    claude_max_position_pct: float = Field(default=0.25)  # <= 25% of trading capital in any one position
+    claude_max_deploy_pct: float = Field(default=0.60)    # <= 60% of trading capital deployed across all positions
     slippage_bps_spot: int = Field(default=150)
     slippage_bps_news: int = Field(default=300)
     max_drawdown_pct: float = Field(default=20.0)
@@ -243,10 +247,11 @@ class Settings(BaseSettings):
     claude_timeout_sec: int = Field(default=120)
     claude_min_conviction: float = Field(default=0.45)     # ignore picks below this conviction
     claude_trigger_buffer: float = Field(default=0.004)    # price tolerance (0.4%) around an entry alert
-    claude_tp_r_multiple: float = Field(default=2.5)        # hard take-profit = this many R (let winners run via the trail)
+    claude_tp_r_multiple: float = Field(default=2.5)        # reversion hard take-profit = this many R
+    claude_momentum_tp_r: float = Field(default=6.0)        # momentum/breakout picks get a WIDE cap so a home-run can run (the trail still protects)
     watchlist_universe_size: int = Field(default=160)       # scan the FULL eligible+tradable set (no artificial cap; 149 whitelist)
     watchlist_interval_hours: float = Field(default=1.0)    # how often Claude re-picks the watchlist (watching/triggering of picks stays every 60-180s)
-    watchlist_max_picks: int = Field(default=5)             # max concurrent Claude picks
+    watchlist_max_picks: int = Field(default=3)             # CONCENTRATE: at most 3 picks (matches max_concurrent_positions)
     watchlist_send_top: int = Field(default=15)             # how many ranked coins to hand Claude (trim = fewer tokens)
 
     # --- Confluence + council "discussion" (verify a setup with all the strats' math) ---

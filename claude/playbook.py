@@ -193,9 +193,13 @@ def triggered_signals(ctx: MarketContext) -> List[Signal]:
         # 1-8%), target ~1.6x the risk. Every loss is then small + pre-defined, not a generic %.
         if invalid and 0 < invalid < price:
             sl = max(1.0, min(8.0, (price - invalid) / price * 100.0))
-            # Wide hard TP (~2.5R) — the monitor moves the stop to breakeven at +1R and
-            # trails past +1.6R, so winners run; this just caps the rare moonshot.
-            tp = round(sl * float(getattr(settings, "claude_tp_r_multiple", 2.5)), 2)
+            # Let WINNERS RUN: momentum/breakout picks get a wide ~6R cap so a home-run can
+            # run (the trail still protects); reversion stays tight at ~2.5R. The monitor moves
+            # the stop to breakeven at +1R and trails past +1.6R either way.
+            tp_r = (float(getattr(settings, "claude_momentum_tp_r", 6.0))
+                    if typ in ("breakout", "trend")
+                    else float(getattr(settings, "claude_tp_r_multiple", 2.5)))
+            tp = round(sl * tp_r, 2)
         else:
             sl, tp = _sl_tp(strat)
         # signal strength: conviction, nudged up when deeper into a reversion zone
