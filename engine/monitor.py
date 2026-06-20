@@ -262,6 +262,20 @@ async def monitor_tick(session: Session, executor: TwakExecutor):
                               hold_min, exit_reason, r_mult, tx=res.tx_hash)
                 await log_engine_msg(session, "info", f"[MONITOR SUCCESS] Exited {symbol}. realized PnL=${pnl_realized:.2f} ({pct_realized:.1f}% on capital, {r_mult:+.2f}R)")
                 apply_cooldown(session, symbol, trade_status, hold_min)
+
+                # Telegram WON/LOST alert (fire-and-forget)
+                try:
+                    from core import telegram
+                    from persistence.repo import get_equity_history
+                    _eq = get_equity_history(session, 1)
+                    telegram.fire(telegram.notify_close(
+                        symbol=symbol, strategy=pos.strategy, pnl_usd=pnl_realized,
+                        pnl_pct=pct_realized, r_mult=r_mult, hold_min=hold_min,
+                        exit_reason=exit_reason,
+                        equity=(float(_eq[-1].equity_usd) if _eq else None),
+                        mode=("live" if not executor.simulation else "sim")))
+                except Exception:
+                    pass
             else:
                 await log_engine_msg(session, "error", f"[MONITOR ERROR] Exit failed for {symbol}: {res.error}")
         except Exception as e:

@@ -547,6 +547,19 @@ async def run_pipeline_cycle(session: Session, executor: TwakExecutor):
                 liq_txt = f" liq=${liq:.4f}" if is_perp_sig else ""
                 await log_engine_msg(session, "info", f"[bot] POSITION OPENED: {venue_lbl} {sig.symbol} size={res.amount_out:.6f} entry=${entry:.4f}{liq_txt} tx={pos_id}")
 
+                # Telegram alert (fire-and-forget — never stalls the loop)
+                try:
+                    from core import telegram
+                    telegram.fire(telegram.notify_open(
+                        symbol=sig.symbol, strategy=sig.strategy_name, size_usd=stake,
+                        entry=entry, stop=stop_loss, target=take_profit,
+                        conviction=float(getattr(dec, "final_confidence", 0.0)),
+                        equity=portfolio_value, open_n=len(real_open) + 1,
+                        max_n=settings.max_concurrent_positions,
+                        mode=("live" if not executor.simulation else "sim")))
+                except Exception:
+                    pass
+
                 log_decision(DecisionLog(
                     id=dec.decision_id, t=now_dt, symbol=sig.symbol, action="ENTER",
                     strategy=sig.strategy_name, filters_passed=["cex_sanity", "cooldown"],

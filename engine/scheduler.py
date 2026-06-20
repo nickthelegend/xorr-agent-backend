@@ -50,6 +50,15 @@ class EngineScheduler:
 
         print("[SCHEDULER] Engine scheduler started background tasks + watchdog.")
 
+        # Telegram "online" ping (fire-and-forget)
+        try:
+            from core import telegram
+            telegram.fire(telegram.notify_startup(
+                getattr(settings, "start_mode", "simulation"),
+                float(getattr(settings, "watchlist_interval_hours", 1.0))))
+        except Exception:
+            pass
+
     def stop(self):
         """Pauses the scheduler scanning loops; open positions are still monitored."""
         self._running = False

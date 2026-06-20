@@ -266,6 +266,11 @@ class Settings(BaseSettings):
     trail_trigger_r: float = Field(default=1.6)             # past +this many R, start ratcheting a trailing stop
     trail_giveback_r: float = Field(default=0.8)            # trailing stop locks in (current_R - this) R
 
+    # --- Telegram notifications (open/close trades, win/loss) ---
+    telegram_bot_token: str = Field(default="")
+    telegram_chat_id: str = Field(default="")
+    telegram_proxy: str = Field(default="")   # http(s)://host:port or socks5://host:port — needed where Telegram is ISP-blocked
+
     # --- Mode ---
     start_mode: str = Field(default="simulation")
 
